@@ -897,14 +897,8 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
       ctx.translate(x, y);
       ctx.rotate(rotation);
 
-      // Use seasonPalette base but vary slightly
-      // For simplicity, we'll just overlay a varied shade or use the palette directly with alpha
-      // A better approach is to have secondary colors in the palette, but let's stick to simple alpha variation
-
       ctx.fillStyle = seasonPalette[biome];
-      // Darken or lighten randomly
-      ctx.filter = rng.next() > 0.5 ? 'brightness(1.1)' : 'brightness(0.9)';
-      ctx.globalAlpha = 0.2;
+      ctx.globalAlpha = rng.next() > 0.5 ? 0.25 : 0.15;
 
       ctx.beginPath();
       ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
@@ -912,22 +906,25 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
       ctx.restore();
     }
     ctx.globalAlpha = 1.0;
-    ctx.filter = 'none';
   };
 
   const drawGroundDetails = (ctx: CanvasRenderingContext2D, biome: Biome, seasonPalette: Record<Biome, string>) => {
     const rng = new SeededRandom(`${dateSeed}-${currentScreen.x}-${currentScreen.y}-ground`);
-    for (let i = 0; i < 250; i++) {
-      const x = rng.range(0, CANVAS_WIDTH);
-      const y = rng.range(0, CANVAS_HEIGHT);
+    // Reduced from 250 to 80 for performance
+    const detailCount = 80;
 
-      // Use season color for details too, but darker
-      ctx.fillStyle = seasonPalette[biome];
-      ctx.filter = 'brightness(0.7)';
+    // Pre-calculate darker color once instead of using filter
+    const baseColor = seasonPalette[biome];
 
-      if (biome === Biome.GRASS || biome === Biome.FOREST || biome === Biome.RIVER) {
-        ctx.strokeStyle = ctx.fillStyle as string; // Hacky but works since we set fillStyle above
-        ctx.lineWidth = 2;
+    if (biome === Biome.GRASS || biome === Biome.FOREST || biome === Biome.RIVER) {
+      ctx.strokeStyle = '#2d5a3d';
+      ctx.fillStyle = '#2d5a3d';
+      ctx.lineWidth = 2;
+
+      for (let i = 0; i < detailCount; i++) {
+        const x = rng.range(0, CANVAS_WIDTH);
+        const y = rng.range(0, CANVAS_HEIGHT);
+
         if (i % 2 === 0) {
           ctx.beginPath();
           ctx.moveTo(x, y);
@@ -938,17 +935,21 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
         } else {
           ctx.fillRect(x, y, 2, 3);
         }
-      } else if (biome === Biome.DESERT) {
+      }
+    } else if (biome === Biome.DESERT) {
+      ctx.fillStyle = '#d4a574';
+      for (let i = 0; i < detailCount; i++) {
+        const x = rng.range(0, CANVAS_WIDTH);
+        const y = rng.range(0, CANVAS_HEIGHT);
         ctx.fillRect(x, y, 2, 2);
-        if (i % 30 === 0) {
-          ctx.fillStyle = '#78716c'; // Rocks stay grey
-          ctx.filter = 'none';
+        if (i % 10 === 0) {
+          ctx.fillStyle = '#78716c';
           ctx.beginPath();
           ctx.arc(x, y, 2, 0, Math.PI * 2);
           ctx.fill();
+          ctx.fillStyle = '#d4a574';
         }
       }
-      ctx.filter = 'none';
     }
   };
 
