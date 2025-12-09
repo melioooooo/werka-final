@@ -1769,17 +1769,16 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
 
     // Calculate scale to fit viewport
     const updateScale = () => {
-      const padding = 20; // Padding around game
-      const controlsHeight = isTouchDevice ? 180 : 0; // Space for mobile controls
-
+      const padding = 10; // Reduced padding
+      // Controls are overlays now, so we use full height
       const availableWidth = window.innerWidth - padding * 2;
-      const availableHeight = window.innerHeight - padding * 2 - controlsHeight;
+      const availableHeight = window.innerHeight - padding * 2;
 
       const scaleX = availableWidth / CANVAS_WIDTH;
       const scaleY = availableHeight / CANVAS_HEIGHT;
 
-      // Use the smaller scale to maintain aspect ratio, max 1 to not upscale
-      const newScale = Math.min(scaleX, scaleY, 1);
+      // Use the smaller scale to maintain aspect ratio
+      const newScale = Math.min(scaleX, scaleY);
       setScale(newScale);
     };
 

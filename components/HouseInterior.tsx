@@ -33,6 +33,7 @@ export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, onExit,
     const spriteImagesRef = useRef<{ [key: string]: HTMLImageElement }>({});
     const [areSpritesLoaded, setAreSpritesLoaded] = useState(false);
     const [isBackgroundLoaded, setIsBackgroundLoaded] = useState(false);
+    const [scale, setScale] = useState(1);
 
     const [player, setPlayer] = useState<Player>({
         x: CANVAS_WIDTH / 2,
@@ -45,6 +46,20 @@ export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, onExit,
     const playerRef = useRef(player);
     const keysPressed = useRef<Set<string>>(new Set());
     const [interactionPrompt, setInteractionPrompt] = useState<string | null>(null);
+
+    useEffect(() => {
+        const updateScale = () => {
+            const padding = 10;
+            const availableWidth = window.innerWidth - padding * 2;
+            const availableHeight = window.innerHeight - padding * 2;
+            const scaleX = availableWidth / CANVAS_WIDTH;
+            const scaleY = availableHeight / CANVAS_HEIGHT;
+            setScale(Math.min(scaleX, scaleY));
+        };
+        updateScale();
+        window.addEventListener('resize', updateScale);
+        return () => window.removeEventListener('resize', updateScale);
+    }, []);
 
     useEffect(() => {
         const img = new Image();
@@ -199,7 +214,10 @@ export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, onExit,
 
     return (
         <div className="flex flex-col items-center justify-center w-full h-full bg-black/50">
-            <div className="relative bg-black rounded-xl overflow-hidden border-4 border-stone-700 shadow-2xl">
+            <div
+                className="relative bg-black rounded-xl overflow-hidden border-4 border-stone-700 shadow-2xl origin-center transition-transform duration-300"
+                style={{ transform: `scale(${scale})` }}
+            >
                 <canvas ref={canvasRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} className="block" />
                 <InventoryHUD inventory={player.inventory} timeLabel="INSIDE" />
                 {interactionPrompt && (
