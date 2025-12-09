@@ -348,7 +348,15 @@ export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, onExit,
         }
     };
 
-    const [isTouchDevice] = useState(() => 'ontouchstart' in window || navigator.maxTouchPoints > 0);
+    // Proper touch device detection with useEffect
+    const [isTouchDevice, setIsTouchDevice] = useState(false);
+
+    useEffect(() => {
+        const checkTouch = () => {
+            setIsTouchDevice('ontouchstart' in window || navigator.maxTouchPoints > 0);
+        };
+        checkTouch();
+    }, []);
 
     return (
         <div className="flex flex-col items-center justify-center w-full h-full bg-black/50">
@@ -372,14 +380,14 @@ export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, onExit,
             {/* Mobile Controls */}
             {isTouchDevice && (
                 <div
-                    className="fixed bottom-0 left-0 right-0 flex justify-between items-end px-4 pb-6 pointer-events-none z-50"
+                    className="fixed bottom-0 left-0 right-0 flex justify-between items-end px-4 pb-6 z-[9999]"
                     style={{ paddingBottom: 'max(24px, env(safe-area-inset-bottom))' }}
                 >
                     {/* D-Pad Controls */}
-                    <div className="pointer-events-auto grid grid-cols-3 gap-1" style={{ width: '180px' }}>
+                    <div className="grid grid-cols-3 gap-1" style={{ width: '180px' }}>
                         <div />
                         <button
-                            className="mobile-control-btn w-14 h-14 bg-white/30 rounded-xl border-2 border-white/60 active:bg-white/60 flex items-center justify-center text-2xl text-white font-bold shadow-lg backdrop-blur-sm"
+                            className="w-14 h-14 bg-slate-800 rounded-xl border-2 border-slate-500 active:bg-slate-600 flex items-center justify-center text-2xl text-white font-bold shadow-lg"
                             onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', true); }}
                             onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', false); }}
                             onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', false); }}
@@ -389,7 +397,7 @@ export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, onExit,
                         <div />
 
                         <button
-                            className="mobile-control-btn w-14 h-14 bg-white/30 rounded-xl border-2 border-white/60 active:bg-white/60 flex items-center justify-center text-2xl text-white font-bold shadow-lg backdrop-blur-sm"
+                            className="w-14 h-14 bg-slate-800 rounded-xl border-2 border-slate-500 active:bg-slate-600 flex items-center justify-center text-2xl text-white font-bold shadow-lg"
                             onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', true); }}
                             onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', false); }}
                             onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', false); }}
@@ -397,7 +405,7 @@ export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, onExit,
                             ◀
                         </button>
                         <button
-                            className="mobile-control-btn w-14 h-14 bg-white/30 rounded-xl border-2 border-white/60 active:bg-white/60 flex items-center justify-center text-2xl text-white font-bold shadow-lg backdrop-blur-sm"
+                            className="w-14 h-14 bg-slate-800 rounded-xl border-2 border-slate-500 active:bg-slate-600 flex items-center justify-center text-2xl text-white font-bold shadow-lg"
                             onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', true); }}
                             onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', false); }}
                             onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', false); }}
@@ -405,7 +413,7 @@ export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, onExit,
                             ▼
                         </button>
                         <button
-                            className="mobile-control-btn w-14 h-14 bg-white/30 rounded-xl border-2 border-white/60 active:bg-white/60 flex items-center justify-center text-2xl text-white font-bold shadow-lg backdrop-blur-sm"
+                            className="w-14 h-14 bg-slate-800 rounded-xl border-2 border-slate-500 active:bg-slate-600 flex items-center justify-center text-2xl text-white font-bold shadow-lg"
                             onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', true); }}
                             onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', false); }}
                             onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', false); }}
@@ -416,7 +424,7 @@ export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, onExit,
 
                     {/* Action Button */}
                     <button
-                        className="mobile-control-btn pointer-events-auto w-20 h-20 bg-yellow-500/80 rounded-full border-4 border-yellow-300 active:bg-yellow-400 flex items-center justify-center text-white font-bold shadow-xl backdrop-blur-sm"
+                        className="w-20 h-20 bg-yellow-500 rounded-full border-4 border-yellow-300 active:bg-yellow-400 flex items-center justify-center text-white font-bold shadow-xl"
                         onTouchStart={(e) => { e.preventDefault(); handleMobileAction(); }}
                     >
                         <span className="text-sm pixel-text">ACTION</span>
@@ -426,3 +434,4 @@ export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, onExit,
         </div>
     );
 };
+
