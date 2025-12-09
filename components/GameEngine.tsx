@@ -1752,11 +1752,19 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Detect touch device
+    // Detect touch device - use multiple methods for better iOS compatibility
     const checkTouch = () => {
-      setIsTouchDevice('ontouchstart' in window || navigator.maxTouchPoints > 0);
+      const hasTouchEvents = 'ontouchstart' in window;
+      const hasPointerEvents = navigator.maxTouchPoints > 0;
+      const isMobileWidth = window.innerWidth <= 1024;
+      const isMobileUserAgent = /iPhone|iPad|iPod|Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+      // Show controls if ANY of these are true
+      setIsTouchDevice(hasTouchEvents || hasPointerEvents || (isMobileWidth && isMobileUserAgent));
     };
     checkTouch();
+    window.addEventListener('resize', checkTouch);
+    return () => window.removeEventListener('resize', checkTouch);
 
     // Calculate scale to fit viewport
     const updateScale = () => {
