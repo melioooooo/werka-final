@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Player, Flower, FlowerType, Biome, Obstacle, Season } from '../types';
 import { InventoryHUD } from './InventoryHUD';
 import { SoundManager } from '../utils/SoundManager';
@@ -1842,58 +1843,61 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
         )}
       </div>
 
-      {/* Mobile Controls - CSS-only approach, hidden on large screens */}
-      <div
-        className="lg:hidden fixed bottom-0 left-0 right-0 flex justify-between items-end px-4 pb-6 z-[9999]"
-        style={{ paddingBottom: 'max(24px, env(safe-area-inset-bottom))' }}
-      >
-        {/* D-Pad Controls */}
-        <div className="grid grid-cols-3 gap-1" style={{ width: '180px' }}>
-          <div /> {/* Empty cell */}
-          <button
-            className="w-14 h-14 bg-slate-800 rounded-xl border-2 border-slate-500 active:bg-slate-600 flex items-center justify-center text-2xl text-white font-bold shadow-lg"
-            onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', true); }}
-            onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', false); }}
-            onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', false); }}
-          >
-            ▲
-          </button>
-          <div /> {/* Empty cell */}
-
-          <button
-            className="w-14 h-14 bg-slate-800 rounded-xl border-2 border-slate-500 active:bg-slate-600 flex items-center justify-center text-2xl text-white font-bold shadow-lg"
-            onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', true); }}
-            onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', false); }}
-            onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', false); }}
-          >
-            ◀
-          </button>
-          <button
-            className="w-14 h-14 bg-slate-800 rounded-xl border-2 border-slate-500 active:bg-slate-600 flex items-center justify-center text-2xl text-white font-bold shadow-lg"
-            onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', true); }}
-            onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', false); }}
-            onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', false); }}
-          >
-            ▼
-          </button>
-          <button
-            className="w-14 h-14 bg-slate-800 rounded-xl border-2 border-slate-500 active:bg-slate-600 flex items-center justify-center text-2xl text-white font-bold shadow-lg"
-            onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', true); }}
-            onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', false); }}
-            onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', false); }}
-          >
-            ▶
-          </button>
-        </div>
-
-        {/* Action Button */}
-        <button
-          className="w-20 h-20 bg-yellow-500 rounded-full border-4 border-yellow-300 active:bg-yellow-400 flex items-center justify-center text-white font-bold shadow-xl"
-          onTouchStart={(e) => { e.preventDefault(); handleActionButton(); }}
+      {/* Mobile Controls - Portal to Body to escape parent transforms */}
+      {typeof document !== 'undefined' && createPortal(
+        <div
+          className="lg:hidden fixed bottom-0 left-0 right-0 flex justify-between items-end px-4 pb-6 z-[99999] pointer-events-none"
+          style={{ paddingBottom: 'max(24px, env(safe-area-inset-bottom))' }}
         >
-          <span className="text-sm pixel-text">ACTION</span>
-        </button>
-      </div>
+          {/* D-Pad Controls */}
+          <div className="grid grid-cols-3 gap-1 pointer-events-auto" style={{ width: '180px' }}>
+            <div /> {/* Empty cell */}
+            <button
+              className="w-14 h-14 bg-slate-800/90 rounded-xl border-2 border-slate-500 active:bg-slate-600 flex items-center justify-center text-2xl text-white font-bold shadow-lg touch-none select-none"
+              onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', true); }}
+              onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', false); }}
+              onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', false); }}
+            >
+              ▲
+            </button>
+            <div /> {/* Empty cell */}
+
+            <button
+              className="w-14 h-14 bg-slate-800/90 rounded-xl border-2 border-slate-500 active:bg-slate-600 flex items-center justify-center text-2xl text-white font-bold shadow-lg touch-none select-none"
+              onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', true); }}
+              onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', false); }}
+              onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', false); }}
+            >
+              ◀
+            </button>
+            <button
+              className="w-14 h-14 bg-slate-800/90 rounded-xl border-2 border-slate-500 active:bg-slate-600 flex items-center justify-center text-2xl text-white font-bold shadow-lg touch-none select-none"
+              onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', true); }}
+              onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', false); }}
+              onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', false); }}
+            >
+              ▼
+            </button>
+            <button
+              className="w-14 h-14 bg-slate-800/90 rounded-xl border-2 border-slate-500 active:bg-slate-600 flex items-center justify-center text-2xl text-white font-bold shadow-lg touch-none select-none"
+              onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', true); }}
+              onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', false); }}
+              onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', false); }}
+            >
+              ▶
+            </button>
+          </div>
+
+          {/* Action Button */}
+          <button
+            className="w-20 h-20 bg-yellow-500/90 rounded-full border-4 border-yellow-300 active:bg-yellow-400 flex items-center justify-center text-white font-bold shadow-xl pointer-events-auto touch-none select-none"
+            onTouchStart={(e) => { e.preventDefault(); handleActionButton(); }}
+          >
+            <span className="text-sm pixel-text">ACTION</span>
+          </button>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };
