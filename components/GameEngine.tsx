@@ -1769,17 +1769,24 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
 
     // Calculate scale to fit viewport
     const updateScale = () => {
-      const padding = 10; // Reduced padding
-      // Controls are overlays now, so we use full height
+      const padding = 10;
+      const isPortrait = window.innerHeight > window.innerWidth;
+      // In portrait, reserve space for controls (Gameboy style). In landscape, controls fit on sides.
+      const controlsHeight = (isTouchDevice && isPortrait) ? 180 : 0;
+
       const availableWidth = window.innerWidth - padding * 2;
-      const availableHeight = window.innerHeight - padding * 2;
+      const availableHeight = window.innerHeight - padding * 2 - controlsHeight;
 
       const scaleX = availableWidth / CANVAS_WIDTH;
       const scaleY = availableHeight / CANVAS_HEIGHT;
 
-      // Use the smaller scale to maintain aspect ratio
       const newScale = Math.min(scaleX, scaleY);
       setScale(newScale);
+
+      // Adjust container position if portrait to sit at top
+      if (containerRef.current) {
+        containerRef.current.style.marginBottom = isPortrait && isTouchDevice ? '180px' : '0';
+      }
     };
 
     updateScale();

@@ -29,11 +29,13 @@ const CRAFTING_TABLE_RECT = { x: 580, y: 350, width: 150, height: 120 };
 
 export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, onExit, onCraft }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
     const backgroundImageRef = useRef<HTMLImageElement | null>(null);
     const spriteImagesRef = useRef<{ [key: string]: HTMLImageElement }>({});
     const [areSpritesLoaded, setAreSpritesLoaded] = useState(false);
     const [isBackgroundLoaded, setIsBackgroundLoaded] = useState(false);
     const [scale, setScale] = useState(1);
+    const [isTouchDevice, setIsTouchDevice] = useState(false);
 
     const [player, setPlayer] = useState<Player>({
         x: CANVAS_WIDTH / 2,
@@ -48,17 +50,39 @@ export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, onExit,
     const [interactionPrompt, setInteractionPrompt] = useState<string | null>(null);
 
     useEffect(() => {
+        const checkTouch = () => {
+            const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+            setIsTouchDevice(hasTouch);
+        };
+        checkTouch();
+        window.addEventListener('resize', checkTouch);
+
         const updateScale = () => {
             const padding = 10;
+            const isPortrait = window.innerHeight > window.innerWidth;
+            // Check touch inside updateScale to ensure we have latest state, or rely on state
+            const touch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
+            const controlsHeight = (touch && isPortrait) ? 180 : 0;
+
             const availableWidth = window.innerWidth - padding * 2;
-            const availableHeight = window.innerHeight - padding * 2;
+            const availableHeight = window.innerHeight - padding * 2 - controlsHeight;
+
             const scaleX = availableWidth / CANVAS_WIDTH;
             const scaleY = availableHeight / CANVAS_HEIGHT;
+
             setScale(Math.min(scaleX, scaleY));
+
+            if (containerRef.current) {
+                containerRef.current.style.marginBottom = (touch && isPortrait) ? '180px' : '0';
+            }
         };
         updateScale();
         window.addEventListener('resize', updateScale);
-        return () => window.removeEventListener('resize', updateScale);
+        return () => {
+            window.removeEventListener('resize', updateScale);
+            window.removeEventListener('resize', checkTouch);
+        };
     }, []);
 
     useEffect(() => {
@@ -215,6 +239,7 @@ export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, onExit,
     return (
         <div className="flex flex-col items-center justify-center w-full h-full bg-black/50">
             <div
+                ref={containerRef}
                 className="relative bg-black rounded-xl overflow-hidden border-4 border-stone-700 shadow-2xl origin-center transition-transform duration-300"
                 style={{ transform: `scale(${scale})` }}
             >
