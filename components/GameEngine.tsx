@@ -1107,31 +1107,111 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
     ctx.strokeStyle = '#451a03'; ctx.lineWidth = 6; ctx.stroke();
 
     // --- ROOF ---
-    // Main Roof
-    ctx.fillStyle = '#7f1d1d'; // Dark Red
+    // Roof outline shadow for depth
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
     ctx.beginPath();
-    ctx.moveTo(x - 20, y + 25);
-    ctx.lineTo(x + w / 2, y - 80);
-    ctx.lineTo(x + w + 20, y + 25);
+    ctx.moveTo(x - 25, y + 30);
+    ctx.lineTo(x + w / 2, y - 70);
+    ctx.lineTo(x + w + 25, y + 30);
     ctx.fill();
 
-    // Thatch Texture
-    ctx.strokeStyle = '#991b1b';
-    ctx.lineWidth = 2;
-    for (let i = 0; i < 12; i++) {
-      const py = y - 70 + i * 8;
-      const spread = i * 18;
-      ctx.beginPath();
-      ctx.moveTo(x + w / 2 - spread, py);
-      ctx.lineTo(x + w / 2 + spread, py);
-      ctx.stroke();
+    // Main Roof base - darker red
+    ctx.fillStyle = '#7f1d1d';
+    ctx.beginPath();
+    ctx.moveTo(x - 20, y + 25);
+    ctx.lineTo(x + w / 2, y - 65);
+    ctx.lineTo(x + w + 20, y + 25);
+    ctx.closePath();
+    ctx.fill();
+
+    // Roof shingle layers - create depth with multiple rows
+    const roofStartY = y - 60;
+    const roofEndY = y + 25;
+    const roofHeight = roofEndY - roofStartY;
+    const shingleRows = 8;
+
+    for (let row = 0; row < shingleRows; row++) {
+      const rowY = roofStartY + (row / shingleRows) * roofHeight;
+      const progress = row / shingleRows;
+      const halfWidth = progress * (w / 2 + 20);
+
+      // Alternate shingle colors for depth
+      ctx.fillStyle = row % 2 === 0 ? '#991b1b' : '#7f1d1d';
+      ctx.strokeStyle = '#581c1c';
+      ctx.lineWidth = 1;
+
+      // Draw individual shingles in this row
+      const shingleWidth = 18;
+      const startX = x + w / 2 - halfWidth;
+      const endX = x + w / 2 + halfWidth;
+
+      for (let sx = startX; sx < endX; sx += shingleWidth) {
+        // Vary shingle shade slightly
+        const shade = Math.random() > 0.5 ? '#991b1b' : '#7f1d1d';
+        ctx.fillStyle = shade;
+
+        ctx.beginPath();
+        ctx.moveTo(sx, rowY);
+        ctx.lineTo(sx + shingleWidth / 2, rowY + roofHeight / shingleRows);
+        ctx.lineTo(sx + shingleWidth, rowY);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
     }
 
-    // --- CHIMNEY ---
+    // Roof ridge cap (top edge highlight)
+    ctx.strokeStyle = '#451a03';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(x + w / 2, y - 65);
+    ctx.lineTo(x + w / 2, y - 65);
+    ctx.stroke();
+
+    // Roof edge trim - left side
+    ctx.strokeStyle = '#451a03';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(x - 20, y + 25);
+    ctx.lineTo(x + w / 2, y - 65);
+    ctx.stroke();
+
+    // Roof edge trim - right side
+    ctx.beginPath();
+    ctx.moveTo(x + w + 20, y + 25);
+    ctx.lineTo(x + w / 2, y - 65);
+    ctx.stroke();
+
+    // Roof bottom edge highlight
+    ctx.strokeStyle = '#78350f';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(x - 22, y + 27);
+    ctx.lineTo(x + w + 22, y + 27);
+    ctx.stroke();
+
+    // --- CHIMNEY (positioned better with roof) ---
+    // Chimney back (shadow)
+    ctx.fillStyle = '#44403c';
+    ctx.fillRect(x + w - 45, y - 45, 30, 55);
+    // Chimney front
     ctx.fillStyle = '#57534e';
-    ctx.fillRect(x + w - 40, y - 60, 25, 60);
-    ctx.fillStyle = '#292524'; // top
-    ctx.fillRect(x + w - 42, y - 65, 29, 6);
+    ctx.fillRect(x + w - 42, y - 50, 25, 55);
+    // Chimney bricks pattern
+    ctx.strokeStyle = '#44403c';
+    ctx.lineWidth = 1;
+    for (let by = y - 48; by < y + 5; by += 8) {
+      ctx.beginPath();
+      ctx.moveTo(x + w - 42, by);
+      ctx.lineTo(x + w - 17, by);
+      ctx.stroke();
+    }
+    // Chimney cap
+    ctx.fillStyle = '#292524';
+    ctx.fillRect(x + w - 47, y - 55, 35, 6);
+    // Chimney inner
+    ctx.fillStyle = '#1c1917';
+    ctx.fillRect(x + w - 37, y - 55, 15, 3);
 
     // --- WINDOWS ---
     const drawWindow = (wx: number, wy: number) => {
@@ -1347,6 +1427,122 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
         ctx.fillStyle = '#fecdd3';
         ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 3, 0, Math.PI * 2); ctx.fill();
         break;
+      // --- NEW FLOWER TYPES ---
+      case FlowerType.IRIS:
+        // Tall sword-like petals
+        ctx.fillStyle = f.color;
+        ctx.beginPath();
+        ctx.moveTo(f.x + sway, f.y - 20);
+        ctx.lineTo(f.x - 4 + sway, f.y - 10);
+        ctx.lineTo(f.x + 4 + sway, f.y - 10);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(f.x - 5 + sway, f.y - 14);
+        ctx.lineTo(f.x - 8 + sway, f.y - 8);
+        ctx.lineTo(f.x - 2 + sway, f.y - 10);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(f.x + 5 + sway, f.y - 14);
+        ctx.lineTo(f.x + 8 + sway, f.y - 8);
+        ctx.lineTo(f.x + 2 + sway, f.y - 10);
+        ctx.fill();
+        // Yellow center detail
+        ctx.fillStyle = '#fde047';
+        ctx.fillRect(f.x - 1 + sway, f.y - 13, 2, 4);
+        break;
+      case FlowerType.MAGNOLIA:
+        // Large white/pink bloom with layered petals
+        ctx.fillStyle = f.color;
+        for (let i = 0; i < 6; i++) {
+          const ang = (i / 6) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.ellipse(f.x + sway + Math.cos(ang) * 5, f.y - 14 + Math.sin(ang) * 5, 5, 3, ang, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = '#fce7f3'; // Lighter center
+        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 3, 0, Math.PI * 2); ctx.fill();
+        break;
+      case FlowerType.CHRYSANTHEMUM:
+        // Dense many-petaled fall flower
+        ctx.fillStyle = f.color;
+        for (let ring = 0; ring < 3; ring++) {
+          for (let i = 0; i < 8; i++) {
+            const ang = (i / 8) * Math.PI * 2 + ring * 0.2;
+            const dist = 3 + ring * 2;
+            ctx.beginPath();
+            ctx.ellipse(f.x + sway + Math.cos(ang) * dist, f.y - 14 + Math.sin(ang) * dist, 2, 1.5, ang, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        ctx.fillStyle = '#78350f'; // Dark center
+        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 2, 0, Math.PI * 2); ctx.fill();
+        break;
+      case FlowerType.WISTERIA:
+        // Cascading purple clusters
+        ctx.fillStyle = f.color;
+        for (let i = 0; i < 5; i++) {
+          const yOff = i * 4;
+          const size = 3 - i * 0.4;
+          ctx.beginPath(); ctx.arc(f.x + sway + (i % 2 === 0 ? -2 : 2), f.y - 18 + yOff, size, 0, Math.PI * 2); ctx.fill();
+        }
+        // Darker accent
+        ctx.fillStyle = '#7c3aed';
+        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 18, 2, 0, Math.PI * 2); ctx.fill();
+        break;
+      case FlowerType.FOXGLOVE:
+        // Tall bell-shaped flowers stacked
+        ctx.fillStyle = f.color;
+        for (let i = 0; i < 4; i++) {
+          const yOff = i * 5;
+          const side = i % 2 === 0 ? -3 : 3;
+          ctx.beginPath();
+          ctx.ellipse(f.x + sway + side, f.y - 22 + yOff, 3, 4, 0, 0, Math.PI * 2);
+          ctx.fill();
+          // Inner spots
+          ctx.fillStyle = '#fce7f3';
+          ctx.beginPath(); ctx.arc(f.x + sway + side, f.y - 22 + yOff, 1, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = f.color;
+        }
+        break;
+      case FlowerType.COSMOS:
+        // Delicate 8-petal star flower
+        ctx.fillStyle = f.color;
+        for (let i = 0; i < 8; i++) {
+          const ang = (i / 8) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.ellipse(f.x + sway + Math.cos(ang) * 5, f.y - 14 + Math.sin(ang) * 5, 3, 1.5, ang, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = '#fef08a'; // Yellow center
+        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 2, 0, Math.PI * 2); ctx.fill();
+        break;
+      case FlowerType.ZINNIA:
+        // Layered colorful petals
+        ctx.fillStyle = f.color;
+        for (let ring = 0; ring < 2; ring++) {
+          for (let i = 0; i < 10; i++) {
+            const ang = (i / 10) * Math.PI * 2 + ring * 0.3;
+            const dist = 4 + ring * 2;
+            ctx.beginPath();
+            ctx.ellipse(f.x + sway + Math.cos(ang) * dist, f.y - 14 + Math.sin(ang) * dist, 2.5, 1.5, ang, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        ctx.fillStyle = '#fbbf24'; // Golden center
+        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 2.5, 0, Math.PI * 2); ctx.fill();
+        break;
+      case FlowerType.ANEMONE:
+        // Windflower with dark center
+        ctx.fillStyle = f.color;
+        for (let i = 0; i < 6; i++) {
+          const ang = (i / 6) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.ellipse(f.x + sway + Math.cos(ang) * 5, f.y - 14 + Math.sin(ang) * 5, 3.5, 2, ang, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = '#1e293b'; // Dark blue center
+        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 3, 0, Math.PI * 2); ctx.fill();
+        break;
       default:
         // Generic 3-petal
         ctx.fillStyle = f.color;
@@ -1550,71 +1746,149 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
   };
 
+  // --- RESPONSIVE SCALING ---
+  const [scale, setScale] = useState(1);
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // Detect touch device
+    const checkTouch = () => {
+      setIsTouchDevice('ontouchstart' in window || navigator.maxTouchPoints > 0);
+    };
+    checkTouch();
+
+    // Calculate scale to fit viewport
+    const updateScale = () => {
+      const padding = 20; // Padding around game
+      const controlsHeight = isTouchDevice ? 180 : 0; // Space for mobile controls
+
+      const availableWidth = window.innerWidth - padding * 2;
+      const availableHeight = window.innerHeight - padding * 2 - controlsHeight;
+
+      const scaleX = availableWidth / CANVAS_WIDTH;
+      const scaleY = availableHeight / CANVAS_HEIGHT;
+
+      // Use the smaller scale to maintain aspect ratio, max 1 to not upscale
+      const newScale = Math.min(scaleX, scaleY, 1);
+      setScale(newScale);
+    };
+
+    updateScale();
+    window.addEventListener('resize', updateScale);
+    window.addEventListener('orientationchange', updateScale);
+
+    return () => {
+      window.removeEventListener('resize', updateScale);
+      window.removeEventListener('orientationchange', updateScale);
+    };
+  }, [isTouchDevice]);
+
+  // Mobile control handlers with better touch handling
+  const handleMobileControl = (key: string, isPressed: boolean) => {
+    if (isPressed) {
+      keysPressed.current.add(key);
+    } else {
+      keysPressed.current.delete(key);
+    }
+  };
+
+  const handleActionButton = () => {
+    keysPressed.current.add('KeyE');
+    // Clear after a short delay to ensure the game loop catches it
+    setTimeout(() => keysPressed.current.delete('KeyE'), 250);
+  };
+
   return (
-    <div className="relative bg-black rounded-xl overflow-hidden border-4 border-stone-700 shadow-2xl">
-      <canvas
-        ref={canvasRef}
-        width={CANVAS_WIDTH}
-        height={CANVAS_HEIGHT}
-        className="block bg-stone-800"
-      />
+    <div className="flex flex-col items-center justify-center w-full h-full bg-black/50">
+      {/* Responsive Game Container */}
+      <div
+        ref={containerRef}
+        className="game-container relative bg-black rounded-xl overflow-hidden border-4 border-stone-700 shadow-2xl"
+        style={{
+          width: CANVAS_WIDTH,
+          height: CANVAS_HEIGHT,
+          transform: `scale(${scale})`,
+          transformOrigin: 'center center',
+        }}
+      >
+        <canvas
+          ref={canvasRef}
+          width={CANVAS_WIDTH}
+          height={CANVAS_HEIGHT}
+          className="block bg-stone-800"
+        />
 
-      <InventoryHUD inventory={player.inventory} timeLabel={timeLabel} />
+        <InventoryHUD inventory={player.inventory} timeLabel={timeLabel} />
 
-      {/* Mobile Controls Overlay */}
-      <div className="absolute bottom-4 left-4 grid grid-cols-3 gap-2 opacity-50 md:hidden pointer-events-auto">
-        <div />
-        <button
-          className="w-16 h-16 bg-white/20 rounded-full border-2 border-white/50 active:bg-white/40 touch-none"
-          onPointerDown={() => keysPressed.current.add('ArrowUp')}
-          onPointerUp={() => keysPressed.current.delete('ArrowUp')}
-          onPointerLeave={() => keysPressed.current.delete('ArrowUp')}
-        >▲</button>
-        <div />
-        <button
-          className="w-16 h-16 bg-white/20 rounded-full border-2 border-white/50 active:bg-white/40 touch-none"
-          onPointerDown={() => keysPressed.current.add('ArrowLeft')}
-          onPointerUp={() => keysPressed.current.delete('ArrowLeft')}
-          onPointerLeave={() => keysPressed.current.delete('ArrowLeft')}
-        >◀</button>
-        <button
-          className="w-16 h-16 bg-white/20 rounded-full border-2 border-white/50 active:bg-white/40 touch-none"
-          onPointerDown={() => keysPressed.current.add('ArrowDown')}
-          onPointerUp={() => keysPressed.current.delete('ArrowDown')}
-          onPointerLeave={() => keysPressed.current.delete('ArrowDown')}
-        >▼</button>
-        <button
-          className="w-16 h-16 bg-white/20 rounded-full border-2 border-white/50 active:bg-white/40 touch-none"
-          onPointerDown={() => keysPressed.current.add('ArrowRight')}
-          onPointerUp={() => keysPressed.current.delete('ArrowRight')}
-          onPointerLeave={() => keysPressed.current.delete('ArrowRight')}
-        >▶</button>
+        {interactionPrompt && (
+          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-16 bg-black/80 text-white px-4 py-2 rounded border border-white/30 pixel-text text-sm animate-pulse pointer-events-none z-20">
+            {interactionPrompt}
+          </div>
+        )}
+
+        {notification && (
+          <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 bg-white/90 text-black px-6 py-2 rounded-full font-bold border-2 border-yellow-500 shadow-lg z-50 transition-all duration-300">
+            {notification}
+          </div>
+        )}
       </div>
 
-      <div className="absolute bottom-4 right-4 opacity-50 md:hidden pointer-events-auto">
-        <button
-          className="w-20 h-20 bg-white/20 rounded-full border-2 border-white/50 active:bg-white/40 flex items-center justify-center text-white font-bold touch-none"
-          onPointerDown={() => {
-            keysPressed.current.add('KeyE');
-            // Trigger immediate check for interaction since loop might miss short tap
-            setTimeout(() => keysPressed.current.delete('KeyE'), 200);
-          }}
+      {/* Mobile Controls - Fixed at bottom of screen, outside scaled container */}
+      {isTouchDevice && (
+        <div
+          className="fixed bottom-0 left-0 right-0 flex justify-between items-end px-4 pb-6 pointer-events-none z-50"
+          style={{ paddingBottom: 'max(24px, env(safe-area-inset-bottom))' }}
         >
-          ACTION
-        </button>
-      </div>
+          {/* D-Pad Controls */}
+          <div className="pointer-events-auto grid grid-cols-3 gap-1" style={{ width: '180px' }}>
+            <div /> {/* Empty cell */}
+            <button
+              className="mobile-control-btn w-14 h-14 bg-white/30 rounded-xl border-2 border-white/60 active:bg-white/60 flex items-center justify-center text-2xl text-white font-bold shadow-lg backdrop-blur-sm"
+              onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', true); }}
+              onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', false); }}
+              onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', false); }}
+            >
+              ▲
+            </button>
+            <div /> {/* Empty cell */}
 
-      {interactionPrompt && (
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-16 bg-black/80 text-white px-4 py-2 rounded border border-white/30 pixel-text text-sm animate-pulse pointer-events-none z-20">
-          {interactionPrompt}
-        </div>
-      )}
+            <button
+              className="mobile-control-btn w-14 h-14 bg-white/30 rounded-xl border-2 border-white/60 active:bg-white/60 flex items-center justify-center text-2xl text-white font-bold shadow-lg backdrop-blur-sm"
+              onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', true); }}
+              onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', false); }}
+              onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', false); }}
+            >
+              ◀
+            </button>
+            <button
+              className="mobile-control-btn w-14 h-14 bg-white/30 rounded-xl border-2 border-white/60 active:bg-white/60 flex items-center justify-center text-2xl text-white font-bold shadow-lg backdrop-blur-sm"
+              onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', true); }}
+              onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', false); }}
+              onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', false); }}
+            >
+              ▼
+            </button>
+            <button
+              className="mobile-control-btn w-14 h-14 bg-white/30 rounded-xl border-2 border-white/60 active:bg-white/60 flex items-center justify-center text-2xl text-white font-bold shadow-lg backdrop-blur-sm"
+              onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', true); }}
+              onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', false); }}
+              onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', false); }}
+            >
+              ▶
+            </button>
+          </div>
 
-      {notification && (
-        <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 bg-white/90 text-black px-6 py-2 rounded-full font-bold border-2 border-yellow-500 shadow-lg z-50 transition-all duration-300">
-          {notification}
+          {/* Action Button */}
+          <button
+            className="mobile-control-btn pointer-events-auto w-20 h-20 bg-yellow-500/80 rounded-full border-4 border-yellow-300 active:bg-yellow-400 flex items-center justify-center text-white font-bold shadow-xl backdrop-blur-sm"
+            onTouchStart={(e) => { e.preventDefault(); handleActionButton(); }}
+          >
+            <span className="text-sm pixel-text">ACTION</span>
+          </button>
         </div>
       )}
     </div>
   );
 };
+

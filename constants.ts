@@ -65,7 +65,16 @@ export const FLOWER_COLORS: Record<FlowerType, string> = {
   [FlowerType.VIOLET]: '#7c3aed',    // Violet-600
   [FlowerType.BUTTERCUP]: '#fef08a', // Yellow-200
   [FlowerType.SNAPDRAGON]: '#be123c',// Rose-700
-  [FlowerType.CAMELLIA]: '#9f1239'   // Rose-800
+  [FlowerType.CAMELLIA]: '#9f1239',  // Rose-800
+  // New flower colors
+  [FlowerType.IRIS]: '#6366f1',       // Indigo-500
+  [FlowerType.MAGNOLIA]: '#fdf2f8',   // Pink-50 (white-pink)
+  [FlowerType.CHRYSANTHEMUM]: '#f97316', // Orange-500
+  [FlowerType.WISTERIA]: '#a78bfa',   // Violet-400
+  [FlowerType.FOXGLOVE]: '#c026d3',   // Fuchsia-600
+  [FlowerType.COSMOS]: '#f9a8d4',     // Pink-300
+  [FlowerType.ZINNIA]: '#fb7185',     // Rose-400
+  [FlowerType.ANEMONE]: '#f43f5e'     // Rose-500
 };
 
 export const BIOME_COLORS: Record<Biome, string> = {
@@ -114,10 +123,10 @@ export const SEASON_COLORS: Record<Season, Record<Biome, string>> = {
 };
 
 export const SEASON_FLOWERS: Record<Season, FlowerType[]> = {
-  [Season.SPRING]: [FlowerType.TULIP, FlowerType.DAFFODIL, FlowerType.CHERRY_BLOSSOM, FlowerType.BLUEBELL, FlowerType.LILY, FlowerType.VIOLET, FlowerType.BUTTERCUP],
-  [Season.SUMMER]: [FlowerType.ROSE, FlowerType.SUNFLOWER, FlowerType.LAVENDER, FlowerType.HIBISCUS, FlowerType.POPPY, FlowerType.LOTUS, FlowerType.SNAPDRAGON],
-  [Season.AUTUMN]: [FlowerType.MARIGOLD, FlowerType.PEONY, FlowerType.ORCHID, FlowerType.CACTUS], // Cactus blooms late?
-  [Season.WINTER]: [FlowerType.JASMINE, FlowerType.DAISY, FlowerType.CAMELLIA] // Hardy flowers
+  [Season.SPRING]: [FlowerType.TULIP, FlowerType.DAFFODIL, FlowerType.CHERRY_BLOSSOM, FlowerType.BLUEBELL, FlowerType.LILY, FlowerType.VIOLET, FlowerType.BUTTERCUP, FlowerType.IRIS, FlowerType.MAGNOLIA, FlowerType.WISTERIA],
+  [Season.SUMMER]: [FlowerType.ROSE, FlowerType.SUNFLOWER, FlowerType.LAVENDER, FlowerType.HIBISCUS, FlowerType.POPPY, FlowerType.LOTUS, FlowerType.SNAPDRAGON, FlowerType.COSMOS, FlowerType.ZINNIA],
+  [Season.AUTUMN]: [FlowerType.MARIGOLD, FlowerType.PEONY, FlowerType.ORCHID, FlowerType.CACTUS, FlowerType.CHRYSANTHEMUM, FlowerType.ANEMONE],
+  [Season.WINTER]: [FlowerType.JASMINE, FlowerType.DAISY, FlowerType.CAMELLIA, FlowerType.FOXGLOVE]
 };
 
 export const HOUSE_SCREEN = { x: 1, y: 1 };

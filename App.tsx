@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { GameEngine } from './components/GameEngine';
 import { CraftingTable } from './components/CraftingTable';
 import { Gallery } from './components/Gallery';
+import { HouseInterior } from './components/HouseInterior';
 import { GameState, Flower, Bouquet, FlowerType } from './types';
 import { generateBouquetImage } from './services/geminiService';
 
@@ -169,6 +170,14 @@ const App: React.FC = () => {
 
   const handleEnterHouse = (currentInventory: Flower[]) => {
     setInventory(currentInventory);
+    setGameState(GameState.INSIDE_HOUSE);
+  };
+
+  const handleExitHouse = () => {
+    setGameState(GameState.EXPLORING);
+  };
+
+  const handleGoToCrafting = () => {
     setGameState(GameState.CRAFTING);
   };
 
@@ -228,11 +237,19 @@ const App: React.FC = () => {
             />
           )}
 
+          {gameState === GameState.INSIDE_HOUSE && (
+            <HouseInterior
+              inventory={inventory}
+              onExit={handleExitHouse}
+              onCraft={handleGoToCrafting}
+            />
+          )}
+
           {gameState === GameState.CRAFTING && (
             <CraftingTable
               inventory={inventory}
               onCraft={handleCraftBouquet}
-              onCancel={() => setGameState(GameState.EXPLORING)}
+              onCancel={() => setGameState(GameState.INSIDE_HOUSE)}
               isGenerating={isGenerating}
             />
           )}

@@ -2,6 +2,7 @@ export enum GameState {
   START_MENU = 'START_MENU',
   INTRO = 'INTRO',
   EXPLORING = 'EXPLORING',
+  INSIDE_HOUSE = 'INSIDE_HOUSE',
   CRAFTING = 'CRAFTING',
   GENERATING = 'GENERATING',
   GALLERY = 'GALLERY'
@@ -34,7 +35,16 @@ export enum FlowerType {
   VIOLET = 'Violet',
   BUTTERCUP = 'Buttercup',
   SNAPDRAGON = 'Snapdragon',
-  CAMELLIA = 'Camellia'
+  CAMELLIA = 'Camellia',
+  // New flower types
+  IRIS = 'Iris',
+  MAGNOLIA = 'Magnolia',
+  CHRYSANTHEMUM = 'Chrysanthemum',
+  WISTERIA = 'Wisteria',
+  FOXGLOVE = 'Foxglove',
+  COSMOS = 'Cosmos',
+  ZINNIA = 'Zinnia',
+  ANEMONE = 'Anemone'
 }
 
 export enum Biome {
