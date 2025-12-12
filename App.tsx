@@ -12,7 +12,7 @@ const StartMenu: React.FC<{
   onReset: () => void;
   bouquets: Bouquet[];
 }> = ({ onStart, onReset, bouquets }) => (
-  <div className="w-[800px] h-[600px] bg-amber-900 flex flex-col items-center justify-center p-8 rounded-xl border-[16px] border-amber-950 relative overflow-hidden shadow-2xl">
+  <div className="w-full max-w-[800px] h-auto max-h-[85dvh] aspect-[4/3] bg-amber-900 flex flex-col items-center justify-center p-4 sm:p-8 rounded-xl border-8 sm:border-[16px] border-amber-950 relative overflow-hidden shadow-2xl">
     {/* Background Pattern */}
     <div className="absolute inset-0 opacity-10 pointer-events-none"
       style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23000000' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")` }}>
@@ -20,22 +20,22 @@ const StartMenu: React.FC<{
 
     {/* Title */}
     <div className="z-10 text-center mb-12 relative">
-      <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 text-amber-300/40 font-bold tracking-[0.5em] text-sm w-full whitespace-nowrap">THE FLOWER GATHERING GAME</div>
-      <h1 className="text-7xl text-amber-100 font-bold pixel-text drop-shadow-[8px_8px_0_rgba(0,0,0,0.6)] leading-tight stroke-black">
+      <div className="absolute -top-8 sm:-top-12 left-1/2 transform -translate-x-1/2 text-amber-300/40 font-bold tracking-[0.3em] sm:tracking-[0.5em] text-xs sm:text-sm w-full whitespace-nowrap">THE FLOWER GATHERING GAME</div>
+      <h1 className="text-4xl sm:text-7xl text-amber-100 font-bold pixel-text drop-shadow-[4px_4px_0_rgba(0,0,0,0.6)] sm:drop-shadow-[8px_8px_0_rgba(0,0,0,0.6)] leading-tight stroke-black">
         WERKA'S<br />BOUQUET
       </h1>
       {/* Decorative divider */}
-      <div className="flex items-center justify-center gap-4 mt-6 opacity-80">
-        <div className="h-1 w-16 bg-amber-400 rounded-full"></div>
+      <div className="flex items-center justify-center gap-2 sm:gap-4 mt-4 sm:mt-6 opacity-80">
+        <div className="h-0.5 sm:h-1 w-8 sm:w-16 bg-amber-400 rounded-full"></div>
         <div className="w-4 h-4 rotate-45 bg-green-500 border-2 border-green-700"></div>
-        <div className="h-1 w-16 bg-amber-400 rounded-full"></div>
+        <div className="h-0.5 sm:h-1 w-8 sm:w-16 bg-amber-400 rounded-full"></div>
       </div>
     </div>
 
     {/* Start Button */}
     <button
       onClick={onStart}
-      className="group relative px-12 py-6 bg-green-600 text-green-100 text-2xl rounded border-b-[6px] border-green-800 hover:bg-green-500 hover:border-green-700 active:border-b-0 active:mt-[6px] active:mb-0 transition-all mb-12 z-10 pixel-text font-bold shadow-[0_10px_20px_rgba(0,0,0,0.3)]"
+      className="group relative px-6 sm:px-12 py-4 sm:py-6 bg-green-600 text-green-100 text-lg sm:text-2xl rounded border-b-4 sm:border-b-[6px] border-green-800 hover:bg-green-500 hover:border-green-700 active:border-b-0 active:mt-[6px] active:mb-0 transition-all mb-6 sm:mb-12 z-10 pixel-text font-bold shadow-[0_10px_20px_rgba(0,0,0,0.3)]"
     >
       START NEW DAY
       <div className="absolute -left-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity text-2xl">🌻</div>
@@ -51,9 +51,9 @@ const StartMenu: React.FC<{
     </button>
 
     {/* Past Collections */}
-    <div className="w-full max-w-2xl z-10 bg-amber-950/40 p-4 rounded-lg border border-amber-900/50 backdrop-blur-sm">
+    <div className="w-full max-w-2xl z-10 bg-amber-950/40 p-3 sm:p-4 rounded-lg border border-amber-900/50 backdrop-blur-sm">
       <div className="flex justify-between items-center mb-3">
-        <h3 className="text-amber-200 pixel-text text-sm tracking-wider">PREVIOUS COLLECTIONS</h3>
+        <h3 className="text-amber-200 pixel-text text-xs sm:text-sm tracking-wider">PREVIOUS COLLECTIONS</h3>
         <span className="text-amber-400/60 text-xs font-mono">{bouquets.length} BOUQUETS</span>
       </div>
 
@@ -64,7 +64,7 @@ const StartMenu: React.FC<{
           </div>
         ) : (
           bouquets.slice(0, 5).map(b => (
-            <div key={b.id} className="flex-shrink-0 w-20 h-20 bg-amber-100 p-1 rounded border border-amber-800/30 shadow-md hover:scale-110 transition-transform duration-200" title={b.date}>
+            <div key={b.id} className="flex-shrink-0 w-14 h-14 sm:w-20 sm:h-20 bg-amber-100 p-1 rounded border border-amber-800/30 shadow-md hover:scale-110 transition-transform duration-200" title={b.date}>
               <img src={b.imageUrl} alt="Bouquet" className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all" />
             </div>
           ))
@@ -93,7 +93,7 @@ const Intro: React.FC<{ date: string; onComplete: () => void }> = ({ date, onCom
   }, [date, onComplete, fullText]);
 
   return (
-    <div className="w-[800px] h-[600px] bg-black flex items-center justify-center p-12 rounded-xl border-4 border-stone-800">
+    <div className="w-full max-w-[800px] h-auto max-h-[85dvh] aspect-[4/3] bg-black flex items-center justify-center p-6 sm:p-12 rounded-xl border-4 border-stone-800">
       <p className="text-green-400 font-mono text-2xl md:text-3xl leading-relaxed typing-cursor">
         {text}
       </p>
