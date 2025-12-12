@@ -1,5 +1,4 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { Player, Flower, FlowerType, Biome, Obstacle, Season } from '../types';
 import { InventoryHUD } from './InventoryHUD';
 import { SoundManager } from '../utils/SoundManager';
@@ -1748,7 +1747,6 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
   };
 
   // --- RESPONSIVE SCALING ---
-  const [scale, setScale] = useState(1);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -1766,38 +1764,7 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
     checkTouch();
     window.addEventListener('resize', checkTouch);
     return () => window.removeEventListener('resize', checkTouch);
-
-    // Calculate scale to fit viewport
-    const updateScale = () => {
-      const padding = 10;
-      const isPortrait = window.innerHeight > window.innerWidth;
-      // In portrait, reserve space for controls (Gameboy style). In landscape, controls fit on sides.
-      const controlsHeight = (isTouchDevice && isPortrait) ? 180 : 0;
-
-      const availableWidth = window.innerWidth - padding * 2;
-      const availableHeight = window.innerHeight - padding * 2 - controlsHeight;
-
-      const scaleX = availableWidth / CANVAS_WIDTH;
-      const scaleY = availableHeight / CANVAS_HEIGHT;
-
-      const newScale = Math.min(scaleX, scaleY);
-      setScale(newScale);
-
-      // Adjust container position if portrait to sit at top
-      if (containerRef.current) {
-        containerRef.current.style.marginBottom = isPortrait && isTouchDevice ? '180px' : '0';
-      }
-    };
-
-    updateScale();
-    window.addEventListener('resize', updateScale);
-    window.addEventListener('orientationchange', updateScale);
-
-    return () => {
-      window.removeEventListener('resize', updateScale);
-      window.removeEventListener('orientationchange', updateScale);
-    };
-  }, [isTouchDevice]);
+  }, []);
 
   // Mobile control handlers with better touch handling
   const handleMobileControl = (key: string, isPressed: boolean) => {
@@ -1815,95 +1782,68 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
   };
 
   return (
-    <div className="flex flex-col items-center justify-center w-full h-full bg-black/50">
-      {/* Responsive Game Container */}
-      <div
-        ref={containerRef}
-        className="game-container relative bg-black rounded-xl overflow-hidden border-4 border-stone-700 shadow-2xl"
-        style={{
-          width: CANVAS_WIDTH,
-          height: CANVAS_HEIGHT,
-          transform: `scale(${scale})`,
-          transformOrigin: 'center center',
-        }}
-      >
-        <canvas
-          ref={canvasRef}
-          width={CANVAS_WIDTH}
-          height={CANVAS_HEIGHT}
-          className="block bg-stone-800"
-        />
+    <div className="flex flex-col h-[100dvh] w-full bg-stone-900">
+      {/* GAME SCREEN AREA - Top section */}
+      <div className="flex-1 flex items-center justify-center p-2 min-h-0">
+        <div
+          ref={containerRef}
+          className="game-container relative bg-black rounded-lg overflow-hidden border-4 border-stone-700 shadow-2xl max-w-full max-h-full"
+          style={{ aspectRatio: `${CANVAS_WIDTH} / ${CANVAS_HEIGHT}` }}
+        >
+          <canvas
+            ref={canvasRef}
+            width={CANVAS_WIDTH}
+            height={CANVAS_HEIGHT}
+            className="w-full h-full"
+          />
 
-        <InventoryHUD inventory={player.inventory} timeLabel={timeLabel} />
+          <InventoryHUD inventory={player.inventory} timeLabel={timeLabel} />
 
-        {interactionPrompt && (
-          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-16 bg-black/80 text-white px-4 py-2 rounded border border-white/30 pixel-text text-sm animate-pulse pointer-events-none z-20">
-            {interactionPrompt}
-          </div>
-        )}
+          {interactionPrompt && (
+            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-16 bg-black/80 text-white px-4 py-2 rounded border border-white/30 pixel-text text-sm animate-pulse pointer-events-none z-20">
+              {interactionPrompt}
+            </div>
+          )}
 
-        {notification && (
-          <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 bg-white/90 text-black px-6 py-2 rounded-full font-bold border-2 border-yellow-500 shadow-lg z-50 transition-all duration-300">
-            {notification}
-          </div>
-        )}
+          {notification && (
+            <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 bg-white/90 text-black px-6 py-2 rounded-full font-bold border-2 border-yellow-500 shadow-lg z-50 transition-all duration-300">
+              {notification}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Mobile Controls - Portal to Body to escape parent transforms */}
-      {typeof document !== 'undefined' && createPortal(
-        <div
-          className="lg:hidden fixed bottom-0 left-0 right-0 flex justify-between items-end px-4 pb-6 z-[99999] pointer-events-none"
-          style={{ paddingBottom: 'max(24px, env(safe-area-inset-bottom))' }}
-        >
-          {/* D-Pad Controls */}
-          <div className="grid grid-cols-3 gap-1 pointer-events-auto" style={{ width: '180px' }}>
-            <div /> {/* Empty cell */}
-            <button
-              className="w-14 h-14 bg-slate-800/90 rounded-xl border-2 border-slate-500 active:bg-slate-600 flex items-center justify-center text-2xl text-white font-bold shadow-lg touch-none select-none"
-              onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', true); }}
-              onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', false); }}
-              onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', false); }}
-            >
-              ▲
-            </button>
-            <div /> {/* Empty cell */}
+      {/* CONTROLS AREA - Bottom section (hidden on desktop) */}
+      <div className="lg:hidden flex-shrink-0 h-44 bg-stone-800 border-t-4 border-stone-600 flex justify-between items-center px-6"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        {/* D-Pad */}
+        <div className="grid grid-cols-3 gap-1" style={{ width: '150px' }}>
+          <div />
+          <button className="w-12 h-12 bg-stone-700 rounded-lg border-2 border-stone-500 active:bg-stone-600 flex items-center justify-center text-xl text-white font-bold shadow-lg touch-none select-none"
+            onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', true); }}
+            onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', false); }}
+            onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', false); }}>▲</button>
+          <div />
+          <button className="w-12 h-12 bg-stone-700 rounded-lg border-2 border-stone-500 active:bg-stone-600 flex items-center justify-center text-xl text-white font-bold shadow-lg touch-none select-none"
+            onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', true); }}
+            onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', false); }}
+            onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', false); }}>◀</button>
+          <button className="w-12 h-12 bg-stone-700 rounded-lg border-2 border-stone-500 active:bg-stone-600 flex items-center justify-center text-xl text-white font-bold shadow-lg touch-none select-none"
+            onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', true); }}
+            onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', false); }}
+            onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', false); }}>▼</button>
+          <button className="w-12 h-12 bg-stone-700 rounded-lg border-2 border-stone-500 active:bg-stone-600 flex items-center justify-center text-xl text-white font-bold shadow-lg touch-none select-none"
+            onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', true); }}
+            onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', false); }}
+            onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', false); }}>▶</button>
+        </div>
 
-            <button
-              className="w-14 h-14 bg-slate-800/90 rounded-xl border-2 border-slate-500 active:bg-slate-600 flex items-center justify-center text-2xl text-white font-bold shadow-lg touch-none select-none"
-              onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', true); }}
-              onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', false); }}
-              onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', false); }}
-            >
-              ◀
-            </button>
-            <button
-              className="w-14 h-14 bg-slate-800/90 rounded-xl border-2 border-slate-500 active:bg-slate-600 flex items-center justify-center text-2xl text-white font-bold shadow-lg touch-none select-none"
-              onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', true); }}
-              onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', false); }}
-              onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', false); }}
-            >
-              ▼
-            </button>
-            <button
-              className="w-14 h-14 bg-slate-800/90 rounded-xl border-2 border-slate-500 active:bg-slate-600 flex items-center justify-center text-2xl text-white font-bold shadow-lg touch-none select-none"
-              onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', true); }}
-              onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', false); }}
-              onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', false); }}
-            >
-              ▶
-            </button>
-          </div>
-
-          {/* Action Button */}
-          <button
-            className="w-20 h-20 bg-yellow-500/90 rounded-full border-4 border-yellow-300 active:bg-yellow-400 flex items-center justify-center text-white font-bold shadow-xl pointer-events-auto touch-none select-none"
-            onTouchStart={(e) => { e.preventDefault(); handleActionButton(); }}
-          >
-            <span className="text-sm pixel-text">ACTION</span>
-          </button>
-        </div>,
-        document.body
-      )}
+        {/* Action Button */}
+        <button className="w-20 h-20 bg-yellow-500 rounded-full border-4 border-yellow-300 active:bg-yellow-400 flex items-center justify-center text-white font-bold shadow-xl touch-none select-none"
+          onTouchStart={(e) => { e.preventDefault(); handleActionButton(); }}>
+          <span className="text-sm pixel-text">ACTION</span>
+        </button>
+      </div>
     </div>
   );
 };

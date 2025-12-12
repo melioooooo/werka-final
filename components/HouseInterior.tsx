@@ -1,5 +1,4 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import { Flower, Player } from '../types';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, PLAYER_SPEED, PLAYER_SPRITES, SPRITE_SIZE, SPRITE_SCALE, SPRITE_COUNTS, ANIMATION_SPEED } from '../constants';
 import { InventoryHUD } from './InventoryHUD';
@@ -29,13 +28,10 @@ const CRAFTING_TABLE_RECT = { x: 580, y: 350, width: 150, height: 120 };
 
 export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, onExit, onCraft }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const containerRef = useRef<HTMLDivElement>(null);
     const backgroundImageRef = useRef<HTMLImageElement | null>(null);
     const spriteImagesRef = useRef<{ [key: string]: HTMLImageElement }>({});
     const [areSpritesLoaded, setAreSpritesLoaded] = useState(false);
     const [isBackgroundLoaded, setIsBackgroundLoaded] = useState(false);
-    const [scale, setScale] = useState(1);
-    const [isTouchDevice, setIsTouchDevice] = useState(false);
 
     const [player, setPlayer] = useState<Player>({
         x: CANVAS_WIDTH / 2,
@@ -48,42 +44,6 @@ export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, onExit,
     const playerRef = useRef(player);
     const keysPressed = useRef<Set<string>>(new Set());
     const [interactionPrompt, setInteractionPrompt] = useState<string | null>(null);
-
-    useEffect(() => {
-        const checkTouch = () => {
-            const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-            setIsTouchDevice(hasTouch);
-        };
-        checkTouch();
-        window.addEventListener('resize', checkTouch);
-
-        const updateScale = () => {
-            const padding = 10;
-            const isPortrait = window.innerHeight > window.innerWidth;
-            // Check touch inside updateScale to ensure we have latest state, or rely on state
-            const touch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-
-            const controlsHeight = (touch && isPortrait) ? 180 : 0;
-
-            const availableWidth = window.innerWidth - padding * 2;
-            const availableHeight = window.innerHeight - padding * 2 - controlsHeight;
-
-            const scaleX = availableWidth / CANVAS_WIDTH;
-            const scaleY = availableHeight / CANVAS_HEIGHT;
-
-            setScale(Math.min(scaleX, scaleY));
-
-            if (containerRef.current) {
-                containerRef.current.style.marginBottom = (touch && isPortrait) ? '180px' : '0';
-            }
-        };
-        updateScale();
-        window.addEventListener('resize', updateScale);
-        return () => {
-            window.removeEventListener('resize', updateScale);
-            window.removeEventListener('resize', checkTouch);
-        };
-    }, []);
 
     useEffect(() => {
         const img = new Image();
@@ -237,51 +197,59 @@ export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, onExit,
     };
 
     return (
-        <div className="flex flex-col items-center justify-center w-full h-full bg-black/50">
-            <div
-                ref={containerRef}
-                className="relative bg-black rounded-xl overflow-hidden border-4 border-stone-700 shadow-2xl origin-center transition-transform duration-300"
-                style={{ transform: `scale(${scale})` }}
-            >
-                <canvas ref={canvasRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} className="block" />
-                <InventoryHUD inventory={player.inventory} timeLabel="INSIDE" />
-                {interactionPrompt && (
-                    <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-16 bg-black/80 text-white px-4 py-2 rounded border border-white/30 pixel-text text-sm animate-pulse pointer-events-none z-20">
-                        {interactionPrompt}
-                    </div>
-                )}
+        <div className="flex flex-col h-[100dvh] w-full bg-stone-900">
+            {/* GAME SCREEN AREA - Top section */}
+            <div className="flex-1 flex items-center justify-center p-2 min-h-0">
+                <div
+                    className="relative bg-black rounded-lg overflow-hidden border-4 border-stone-700 shadow-2xl max-w-full max-h-full"
+                    style={{ aspectRatio: `${CANVAS_WIDTH} / ${CANVAS_HEIGHT}` }}
+                >
+                    <canvas
+                        ref={canvasRef}
+                        width={CANVAS_WIDTH}
+                        height={CANVAS_HEIGHT}
+                        className="w-full h-full"
+                    />
+                    <InventoryHUD inventory={player.inventory} timeLabel="INSIDE" />
+                    {interactionPrompt && (
+                        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-16 bg-black/80 text-white px-4 py-2 rounded border border-white/30 pixel-text text-sm animate-pulse pointer-events-none z-20">
+                            {interactionPrompt}
+                        </div>
+                    )}
+                </div>
             </div>
 
-            {/* Mobile Controls - Portal to Body */}
-            {typeof document !== 'undefined' && createPortal(
-                <div className="lg:hidden fixed bottom-0 left-0 right-0 flex justify-between items-end px-4 pb-6 z-[99999] pointer-events-none" style={{ paddingBottom: 'max(24px, env(safe-area-inset-bottom))' }}>
-                    <div className="grid grid-cols-3 gap-1 pointer-events-auto" style={{ width: '180px' }}>
-                        <div />
-                        <button className="w-14 h-14 bg-slate-800/90 rounded-xl border-2 border-slate-500 active:bg-slate-600 flex items-center justify-center text-2xl text-white font-bold shadow-lg touch-none select-none"
-                            onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', true); }}
-                            onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', false); }}
-                            onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', false); }}>▲</button>
-                        <div />
-                        <button className="w-14 h-14 bg-slate-800/90 rounded-xl border-2 border-slate-500 active:bg-slate-600 flex items-center justify-center text-2xl text-white font-bold shadow-lg touch-none select-none"
-                            onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', true); }}
-                            onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', false); }}
-                            onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', false); }}>◀</button>
-                        <button className="w-14 h-14 bg-slate-800/90 rounded-xl border-2 border-slate-500 active:bg-slate-600 flex items-center justify-center text-2xl text-white font-bold shadow-lg touch-none select-none"
-                            onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', true); }}
-                            onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', false); }}
-                            onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', false); }}>▼</button>
-                        <button className="w-14 h-14 bg-slate-800/90 rounded-xl border-2 border-slate-500 active:bg-slate-600 flex items-center justify-center text-2xl text-white font-bold shadow-lg touch-none select-none"
-                            onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', true); }}
-                            onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', false); }}
-                            onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', false); }}>▶</button>
-                    </div>
-                    <button className="w-20 h-20 bg-yellow-500/90 rounded-full border-4 border-yellow-300 active:bg-yellow-400 flex items-center justify-center text-white font-bold shadow-xl pointer-events-auto touch-none select-none"
-                        onTouchStart={(e) => { e.preventDefault(); handleMobileAction(); }}>
-                        <span className="text-sm pixel-text">ACTION</span>
-                    </button>
-                </div>,
-                document.body
-            )}
+            {/* CONTROLS AREA - Bottom section (hidden on desktop) */}
+            <div className="lg:hidden flex-shrink-0 h-44 bg-stone-800 border-t-4 border-stone-600 flex justify-between items-center px-6"
+                style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+                {/* D-Pad */}
+                <div className="grid grid-cols-3 gap-1" style={{ width: '150px' }}>
+                    <div />
+                    <button className="w-12 h-12 bg-stone-700 rounded-lg border-2 border-stone-500 active:bg-stone-600 flex items-center justify-center text-xl text-white font-bold shadow-lg touch-none select-none"
+                        onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', true); }}
+                        onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', false); }}
+                        onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', false); }}>▲</button>
+                    <div />
+                    <button className="w-12 h-12 bg-stone-700 rounded-lg border-2 border-stone-500 active:bg-stone-600 flex items-center justify-center text-xl text-white font-bold shadow-lg touch-none select-none"
+                        onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', true); }}
+                        onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', false); }}
+                        onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', false); }}>◀</button>
+                    <button className="w-12 h-12 bg-stone-700 rounded-lg border-2 border-stone-500 active:bg-stone-600 flex items-center justify-center text-xl text-white font-bold shadow-lg touch-none select-none"
+                        onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', true); }}
+                        onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', false); }}
+                        onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', false); }}>▼</button>
+                    <button className="w-12 h-12 bg-stone-700 rounded-lg border-2 border-stone-500 active:bg-stone-600 flex items-center justify-center text-xl text-white font-bold shadow-lg touch-none select-none"
+                        onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', true); }}
+                        onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', false); }}
+                        onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', false); }}>▶</button>
+                </div>
+
+                {/* Action Button */}
+                <button className="w-20 h-20 bg-yellow-500 rounded-full border-4 border-yellow-300 active:bg-yellow-400 flex items-center justify-center text-white font-bold shadow-xl touch-none select-none"
+                    onTouchStart={(e) => { e.preventDefault(); handleMobileAction(); }}>
+                    <span className="text-sm pixel-text">ACTION</span>
+                </button>
+            </div>
         </div>
     );
 };
