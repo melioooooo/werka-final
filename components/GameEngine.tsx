@@ -1797,7 +1797,10 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
             className="w-full h-full"
           />
 
-          <InventoryHUD inventory={player.inventory} timeLabel={timeLabel} />
+          {/* Desktop Inventory Overlay - hidden on mobile */}
+          <div className="hidden lg:block">
+            <InventoryHUD inventory={player.inventory} timeLabel={timeLabel} />
+          </div>
 
           {interactionPrompt && (
             <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-16 bg-black/80 text-white px-4 py-2 rounded border border-white/30 pixel-text text-sm animate-pulse pointer-events-none z-20">
@@ -1813,8 +1816,13 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
         </div>
       </div>
 
+      {/* MOBILE INVENTORY STRIP - between game and controls (hidden on desktop) */}
+      <div className="lg:hidden flex-shrink-0">
+        <InventoryHUD inventory={player.inventory} timeLabel={timeLabel} isMobile={true} />
+      </div>
+
       {/* CONTROLS AREA - Bottom section (hidden on desktop) */}
-      <div className="lg:hidden flex-shrink-0 h-44 bg-stone-800 border-t-4 border-stone-600 flex justify-between items-center px-6"
+      <div className="lg:hidden flex-shrink-0 h-40 bg-stone-800 border-t-2 border-stone-600 flex justify-between items-center px-6"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         {/* D-Pad */}
         <div className="grid grid-cols-3 gap-1" style={{ width: '150px' }}>
