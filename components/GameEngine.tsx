@@ -241,19 +241,19 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
       [screenPositions[i], screenPositions[j]] = [screenPositions[j], screenPositions[i]];
     }
 
-    // Assign biomes - guarantee at least one of each type, rest random
-    const biomeAssignments: Map<string, Biome> = new Map();
-
-    // First 4 positions get one of each biome (ensures variety)
-    for (let i = 0; i < Math.min(4, screenPositions.length); i++) {
-      const pos = screenPositions[i];
-      biomeAssignments.set(`${pos.x},${pos.y}`, allBiomes[i % allBiomes.length]);
+    // Shuffle the available biomes to pick a unique set for this world
+    const shuffledBiomes = [...allBiomes];
+    for (let i = shuffledBiomes.length - 1; i > 0; i--) {
+      const j = Math.floor(rng.next() * (i + 1));
+      [shuffledBiomes[i], shuffledBiomes[j]] = [shuffledBiomes[j], shuffledBiomes[i]];
     }
 
-    // Remaining positions get random biomes with equal probability
-    for (let i = 4; i < screenPositions.length; i++) {
+    // Assign biomes - take the first 8 biomes from the shuffled list for total variety
+    const biomeAssignments: Map<string, Biome> = new Map();
+    for (let i = 0; i < screenPositions.length; i++) {
       const pos = screenPositions[i];
-      biomeAssignments.set(`${pos.x},${pos.y}`, rng.choice(allBiomes));
+      // Since screenPositions.length is 8 and we have 10 biomes, we'll get 8 unique biomes per map
+      biomeAssignments.set(`${pos.x},${pos.y}`, shuffledBiomes[i % shuffledBiomes.length]);
     }
 
     const newMap: Biome[][] = [];
