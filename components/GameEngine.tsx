@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Player, Flower, FlowerType, Biome, Obstacle, Season } from '../types';
+import { Player, Flower, FlowerType, Biome, Obstacle } from '../types';
 import { InventoryHUD } from './InventoryHUD';
 import { SoundManager } from '../utils/SoundManager';
 import {
@@ -18,9 +18,7 @@ import {
   SPRITE_COUNTS,
   SPRITE_COLS,
   ANIMATION_SPEED,
-  SEASON_DURATION,
-  SEASON_COLORS,
-  SEASON_FLOWERS,
+  BIOME_COLORS,
   DAY_CYCLE_DURATION
 } from '../constants';
 
@@ -100,14 +98,12 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
   const screenRef = useRef(currentScreen);
   const obstaclesRef = useRef(obstacles);
   const worldMapRef = useRef(worldMap);
-  const timeRef = useRef(0); // 0.0 to 1.0 representing 24h cycle
+  const timeRef = useRef(0.35); // 0.0 to 1.0 representing 24h cycle, start at mid-morning (day)
   const particlesRef = useRef<Particle[]>([]);
   const lastStepTime = useRef(0);
   const keysPressed = useRef<Set<string>>(new Set());
 
-  // Seasonal State
-  const [currentSeason, setCurrentSeason] = useState<Season>(Season.SPRING);
-  const seasonTimeRef = useRef(0);
+  // No longer using seasonal concept
 
   useEffect(() => {
     SoundManager.getInstance().playBGM();
@@ -146,12 +142,7 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
       setCurrentScreen(HOUSE_SCREEN);
     }
 
-    // Real-time Season
-    const month = new Date().getMonth(); // 0-11
-    if (month >= 2 && month <= 4) setCurrentSeason(Season.SPRING);
-    else if (month >= 5 && month <= 7) setCurrentSeason(Season.SUMMER);
-    else if (month >= 8 && month <= 10) setCurrentSeason(Season.AUTUMN);
-    else setCurrentSeason(Season.WINTER);
+    // Seasons removed as requested
 
   }, []);
 
@@ -217,27 +208,52 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
       Math.sin((globalX + seedNum * 50) / 100) * 20;
   };
 
+  // Helper to get bridge X position for a river screen (consistent per screen)
+  const getBridgeX = (screenX: number, screenY: number) => {
+    const rng = new SeededRandom(`bridge-${dateSeed}-${screenX}-${screenY}`);
+    // Place bridge in middle area of screen, avoiding edges
+    return Math.floor(rng.range(200, CANVAS_WIDTH - 200));
+  };
+
+  // Bridge width constant
+  const BRIDGE_WIDTH = 80;
+
   // Initialize World
   useEffect(() => {
     const rng = new SeededRandom(dateSeed);
 
-    // Determine Daily Theme
-    // This ensures the map looks distinct each day (e.g., more forests, or more deserts)
-    const themeRoll = rng.next();
-    let biomeWeights: Biome[] = [];
+    // All biomes have equal weight for balanced variety
+    const allBiomes: Biome[] = [Biome.GRASS, Biome.FOREST, Biome.DESERT, Biome.RIVER, Biome.TROPICAL, Biome.MOUNTAIN, Biome.MEADOW, Biome.SWAMP, Biome.TUNDRA, Biome.ENCHANTED];
 
-    if (themeRoll < 0.25) {
-      // Forest Heavy Day
-      biomeWeights = [Biome.FOREST, Biome.FOREST, Biome.FOREST, Biome.GRASS, Biome.RIVER];
-    } else if (themeRoll < 0.5) {
-      // Desert Heavy Day
-      biomeWeights = [Biome.DESERT, Biome.DESERT, Biome.DESERT, Biome.GRASS, Biome.RIVER];
-    } else if (themeRoll < 0.75) {
-      // River/Wetland Day
-      biomeWeights = [Biome.RIVER, Biome.RIVER, Biome.RIVER, Biome.GRASS, Biome.FOREST];
-    } else {
-      // Balanced/Grassy Day
-      biomeWeights = [Biome.GRASS, Biome.GRASS, Biome.FOREST, Biome.DESERT, Biome.RIVER];
+    // Collect all non-house screen positions
+    const screenPositions: { x: number, y: number }[] = [];
+    for (let y = 0; y < 3; y++) {
+      for (let x = 0; x < 3; x++) {
+        if (!(x === HOUSE_SCREEN.x && y === HOUSE_SCREEN.y)) {
+          screenPositions.push({ x, y });
+        }
+      }
+    }
+
+    // Shuffle the positions for random assignment
+    for (let i = screenPositions.length - 1; i > 0; i--) {
+      const j = Math.floor(rng.next() * (i + 1));
+      [screenPositions[i], screenPositions[j]] = [screenPositions[j], screenPositions[i]];
+    }
+
+    // Assign biomes - guarantee at least one of each type, rest random
+    const biomeAssignments: Map<string, Biome> = new Map();
+
+    // First 4 positions get one of each biome (ensures variety)
+    for (let i = 0; i < Math.min(4, screenPositions.length); i++) {
+      const pos = screenPositions[i];
+      biomeAssignments.set(`${pos.x},${pos.y}`, allBiomes[i % allBiomes.length]);
+    }
+
+    // Remaining positions get random biomes with equal probability
+    for (let i = 4; i < screenPositions.length; i++) {
+      const pos = screenPositions[i];
+      biomeAssignments.set(`${pos.x},${pos.y}`, rng.choice(allBiomes));
     }
 
     const newMap: Biome[][] = [];
@@ -245,9 +261,9 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
       const row: Biome[] = [];
       for (let x = 0; x < 3; x++) {
         if (x === HOUSE_SCREEN.x && y === HOUSE_SCREEN.y) {
-          row.push(Biome.GRASS);
+          row.push(Biome.GRASS); // House is always on grass
         } else {
-          row.push(rng.choice(biomeWeights));
+          row.push(biomeAssignments.get(`${x},${y}`) || rng.choice(allBiomes));
         }
       }
       newMap.push(row);
@@ -278,6 +294,47 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
           case Biome.RIVER:
             flowerTypes = [FlowerType.LILY, FlowerType.HYDRANGEA, FlowerType.HIBISCUS, FlowerType.LOTUS];
             density = 15;
+            break;
+          case Biome.TROPICAL:
+            flowerTypes = [
+              FlowerType.BIRD_OF_PARADISE, FlowerType.PLUMERIA, FlowerType.PASSION_FLOWER,
+              FlowerType.FRANGIPANI, FlowerType.HIBISCUS
+            ];
+            density = 22;
+            break;
+          case Biome.MOUNTAIN:
+            flowerTypes = [
+              FlowerType.EDELWEISS, FlowerType.ALPINE_ROSE, FlowerType.GENTIAN, FlowerType.COLUMBINE
+            ];
+            density = 12;
+            break;
+          case Biome.MEADOW:
+            flowerTypes = [
+              FlowerType.BLACK_EYED_SUSAN, FlowerType.CORNFLOWER, FlowerType.CLOVER,
+              FlowerType.WILDFLOWER, FlowerType.DAISY, FlowerType.BUTTERCUP
+            ];
+            density = 30; // Meadows are flower-rich
+            break;
+          case Biome.SWAMP:
+            flowerTypes = [
+              FlowerType.WATER_LILY, FlowerType.LOTUS, FlowerType.SWAMP_ROSE,
+              FlowerType.MARSH_MARIGOLD, FlowerType.CATTAIL
+            ];
+            density = 18;
+            break;
+          case Biome.TUNDRA:
+            flowerTypes = [
+              FlowerType.ARCTIC_POPPY, FlowerType.MOSS_CAMPION,
+              FlowerType.PURPLE_SAXIFRAGE, FlowerType.SNOW_CROCUS
+            ];
+            density = 8; // Sparse tundra vegetation
+            break;
+          case Biome.ENCHANTED:
+            flowerTypes = [
+              FlowerType.MOONFLOWER, FlowerType.STARBLOOM, FlowerType.CRYSTAL_ROSE,
+              FlowerType.FAIRY_BELLS, FlowerType.GLOWSHROOM
+            ];
+            density = 20; // Magical abundance
             break;
           case Biome.GRASS:
           default:
@@ -320,8 +377,8 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
               color: FLOWER_COLORS[type], isPicked: false
             });
           } else {
-            const availableFlowers = SEASON_FLOWERS[currentSeason];
-            const type = availableFlowers[Math.floor(rng.next() * availableFlowers.length)];
+            // Pick randomly from the biome-specific list for variety
+            const type = rng.choice(flowerTypes);
             newFlowers.push({
               id: `f-${sx}-${sy}-${i}`,
               type: type,
@@ -334,7 +391,7 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
       }
     }
     setFlowers(newFlowers);
-  }, [dateSeed, currentSeason]); // Added currentSeason to dependencies
+  }, [dateSeed]); // Removed currentSeason from dependencies
 
   // Obstacles and Decor Generator
   useEffect(() => {
@@ -486,7 +543,7 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
 
     animationFrameId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(animationFrameId);
-  }, [flowers, player, currentScreen, obstacles, areSpritesLoaded, currentSeason]); // Added currentSeason to dependencies
+  }, [flowers, player, currentScreen, obstacles, areSpritesLoaded]); // Removed currentSeason
 
   const update = (dt: number) => {
     const isNight = timeRef.current > 0.8 || timeRef.current < 0.2;
@@ -533,30 +590,7 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
       } else {
         const biome = worldMapRef.current[screenRef.current.y]?.[screenRef.current.x];
 
-        // Seasonal Particle Logic
-        if (currentSeason === Season.WINTER) {
-          // Snow
-          particlesRef.current.push({
-            x: Math.random() * CANVAS_WIDTH,
-            y: -10,
-            vx: (Math.random() - 0.5) * 2,
-            vy: Math.random() * 2 + 1,
-            life: 0, maxLife: 200, type: 'SPORE', // Reusing SPORE type for generic circle
-            color: '#ffffff',
-            size: Math.random() * 2 + 1
-          });
-        } else if (currentSeason === Season.AUTUMN && Math.random() > 0.5) {
-          // Falling Leaves
-          particlesRef.current.push({
-            x: Math.random() * CANVAS_WIDTH,
-            y: -10,
-            vx: (Math.random() - 0.5) * 2,
-            vy: Math.random() * 1 + 1,
-            life: 0, maxLife: 200, type: 'LEAF',
-            color: Math.random() > 0.5 ? '#d97706' : '#b45309',
-            size: Math.random() * 4 + 2
-          });
-        } else if (isNight || type !== 'SPORE') { // Only spawn spores during day
+        if (isNight || type !== 'SPORE') { // Only spawn spores during day
           particlesRef.current.push({
             x: Math.random() * CANVAS_WIDTH,
             y: Math.random() * CANVAS_HEIGHT,
@@ -689,12 +723,20 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
           const globalX = nextScreen.x * CANVAS_WIDTH + nextX;
           const riverY = getRiverY(globalX);
           const riverDist = Math.abs(nextY - riverY);
-          // If already stuck (current pos in river), allow moving OUT (increasing distance)
-          const currentGlobalX = screenRef.current.x * CANVAS_WIDTH + x;
-          const currentRiverY = getRiverY(currentGlobalX);
-          const currentDist = Math.abs(y - currentRiverY);
 
-          if (riverDist < 35) {
+          // Check if player is on the bridge
+          const bridgeX = getBridgeX(nextScreen.x, nextScreen.y);
+          const onBridge = Math.abs(nextX - bridgeX) < BRIDGE_WIDTH / 2;
+
+          // If on bridge, allow crossing
+          if (onBridge) {
+            blocked = false;
+          } else if (riverDist < 35) {
+            // If already stuck (current pos in river), allow moving OUT (increasing distance)
+            const currentGlobalX = screenRef.current.x * CANVAS_WIDTH + x;
+            const currentRiverY = getRiverY(currentGlobalX);
+            const currentDist = Math.abs(y - currentRiverY);
+
             if (currentDist < 35 && riverDist > currentDist) {
               // Allow moving away from center if already stuck
               blocked = false;
@@ -725,40 +767,39 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
       lastStepTime.current = Date.now();
     }
 
-    if (keysPressed.current.has('Space') || keysPressed.current.has('KeyE')) {
-      pickFlower();
-      keysPressed.current.delete('Space');
-      keysPressed.current.delete('KeyE');
-    }
-
-    // Check for interactions
+    // Check for interactions (Space or KeyE)
     let prompt: string | null = null;
+    const isInteracting = keysPressed.current.has('Space') || keysPressed.current.has('KeyE');
 
-    // Check House
+    // 1. Check House Entrance
     if (screenRef.current.x === HOUSE_SCREEN.x && screenRef.current.y === HOUSE_SCREEN.y) {
       const distToDoor = Math.sqrt(Math.pow(playerRef.current.x - (HOUSE_RECT.doorX + HOUSE_RECT.doorWidth / 2), 2) + Math.pow(playerRef.current.y - HOUSE_RECT.doorY, 2));
       if (distToDoor < 50) {
         prompt = "Press E to Enter";
-        if (keysPressed.current.has('KeyE')) {
+        if (isInteracting) {
           SoundManager.getInstance().playSFX('ENTER');
           onEnterHouse(playerRef.current.inventory);
+          keysPressed.current.delete('Space');
           keysPressed.current.delete('KeyE');
+          return; // Exit game loop since we are changing scenes
         }
       }
     }
 
-    // Check Flowers
+    // 2. Check Flowers if not at house
     if (!prompt) {
       const nearbyFlower = flowers.find(f =>
         !f.isPicked &&
         f.screenX === screenRef.current.x &&
         f.screenY === screenRef.current.y &&
-        Math.sqrt(Math.pow(playerRef.current.x - f.x, 2) + Math.pow(playerRef.current.y - f.y, 2)) < 30
+        Math.sqrt(Math.pow(playerRef.current.x - f.x, 2) + Math.pow(playerRef.current.y - f.y, 2)) < 35
       );
+
       if (nearbyFlower) {
         prompt = `Press E to Pick ${nearbyFlower.type}`;
-        if (keysPressed.current.has('KeyE')) {
+        if (isInteracting) {
           pickFlower();
+          keysPressed.current.delete('Space');
           keysPressed.current.delete('KeyE');
         }
       }
@@ -823,21 +864,20 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
     if (!bgCtx) return;
 
     const biome = worldMapRef.current[screenRef.current.y]?.[screenRef.current.x] || Biome.GRASS;
-    const seasonPalette = SEASON_COLORS[currentSeason];
 
     // Draw everything static to the background buffer
-    bgCtx.fillStyle = seasonPalette[biome];
+    bgCtx.fillStyle = BIOME_COLORS[biome];
     bgCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-    drawTerrainPatches(bgCtx, biome, seasonPalette);
-    drawGroundDetails(bgCtx, biome, seasonPalette);
+    drawTerrainPatches(bgCtx, biome, BIOME_COLORS);
+    drawGroundDetails(bgCtx, biome, BIOME_COLORS);
 
     if (biome === Biome.RIVER) drawContinuousRiver(bgCtx);
 
     if (screenRef.current.x === HOUSE_SCREEN.x && screenRef.current.y === HOUSE_SCREEN.y) {
       drawDetailedPath(bgCtx);
     }
-  }, [currentScreen, currentSeason, dateSeed, worldMap]); // Re-render background only when these change
+  }, [currentScreen, dateSeed, worldMap]); // Removed currentSeason
 
   // --- DRAWING ---
 
@@ -949,6 +989,155 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
           ctx.fill();
           ctx.fillStyle = '#d4a574';
         }
+      }
+    } else if (biome === Biome.TROPICAL) {
+      // Tropical: dense foliage, vibrant undergrowth
+      ctx.fillStyle = '#047857';
+      for (let i = 0; i < detailCount; i++) {
+        const x = rng.range(0, CANVAS_WIDTH);
+        const y = rng.range(0, CANVAS_HEIGHT);
+        ctx.fillStyle = rng.next() > 0.5 ? '#059669' : '#10b981';
+        ctx.beginPath();
+        ctx.arc(x, y, 2 + rng.next() * 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (biome === Biome.MOUNTAIN) {
+      // Mountain: rocks, pebbles, sparse vegetation
+      for (let i = 0; i < detailCount; i++) {
+        const x = rng.range(0, CANVAS_WIDTH);
+        const y = rng.range(0, CANVAS_HEIGHT);
+        if (i % 5 === 0) {
+          ctx.fillStyle = '#78716c';
+          ctx.beginPath();
+          ctx.ellipse(x, y, 4 + rng.next() * 4, 3, 0, 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          ctx.fillStyle = rng.next() > 0.5 ? '#a8a29e' : '#d6d3d1';
+          ctx.fillRect(x, y, 2, 2);
+        }
+      }
+    } else if (biome === Biome.MEADOW) {
+      // Meadow: tall swaying grass, colorful dots
+      ctx.strokeStyle = '#65a30d';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < detailCount; i++) {
+        const x = rng.range(0, CANVAS_WIDTH);
+        const y = rng.range(0, CANVAS_HEIGHT);
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x, y - 10);
+        ctx.stroke();
+        if (i % 4 === 0) {
+          const colors = ['#fbbf24', '#ec4899', '#3b82f6', '#f472b6'];
+          ctx.fillStyle = colors[Math.floor(rng.next() * colors.length)];
+          ctx.beginPath();
+          ctx.arc(x, y - 2, 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    } else if (biome === Biome.SWAMP) {
+      // Swamp: murky pools, fog, twisted roots
+      for (let i = 0; i < detailCount; i++) {
+        const x = rng.range(0, CANVAS_WIDTH);
+        const y = rng.range(0, CANVAS_HEIGHT);
+        if (i % 6 === 0) {
+          // Murky water pools
+          ctx.fillStyle = 'rgba(50, 80, 50, 0.4)';
+          ctx.beginPath();
+          ctx.ellipse(x, y, 15 + rng.next() * 20, 8 + rng.next() * 10, 0, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (i % 8 === 0) {
+          // Twisted roots
+          ctx.strokeStyle = '#422006';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.quadraticCurveTo(x + rng.range(-10, 10), y - 10, x + rng.range(-15, 15), y - 5);
+          ctx.stroke();
+        } else {
+          // Moss and muck
+          ctx.fillStyle = rng.next() > 0.5 ? '#3f6212' : '#1a2e05';
+          ctx.fillRect(x, y, 3, 2);
+        }
+      }
+      // Fog effect
+      ctx.fillStyle = 'rgba(150, 170, 150, 0.1)';
+      for (let i = 0; i < 5; i++) {
+        const x = rng.range(0, CANVAS_WIDTH);
+        const y = rng.range(CANVAS_HEIGHT / 2, CANVAS_HEIGHT);
+        ctx.beginPath();
+        ctx.ellipse(x, y, 80, 30, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (biome === Biome.TUNDRA) {
+      // Tundra: snow patches, ice, sparse vegetation
+      for (let i = 0; i < detailCount; i++) {
+        const x = rng.range(0, CANVAS_WIDTH);
+        const y = rng.range(0, CANVAS_HEIGHT);
+        if (i % 4 === 0) {
+          // Snow drifts
+          ctx.fillStyle = '#f8fafc';
+          ctx.beginPath();
+          ctx.ellipse(x, y, 12 + rng.next() * 15, 5 + rng.next() * 5, 0, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (i % 10 === 0) {
+          // Ice crystals
+          ctx.fillStyle = '#bfdbfe';
+          ctx.beginPath();
+          ctx.moveTo(x, y - 6);
+          ctx.lineTo(x - 3, y);
+          ctx.lineTo(x, y + 6);
+          ctx.lineTo(x + 3, y);
+          ctx.fill();
+        } else {
+          // Frozen ground texture
+          ctx.fillStyle = rng.next() > 0.5 ? '#e0f2fe' : '#cbd5e1';
+          ctx.fillRect(x, y, 2, 2);
+        }
+      }
+    } else if (biome === Biome.ENCHANTED) {
+      // Enchanted: glowing particles, magical sparkles, mushrooms
+      for (let i = 0; i < detailCount; i++) {
+        const x = rng.range(0, CANVAS_WIDTH);
+        const y = rng.range(0, CANVAS_HEIGHT);
+        const pulse = Math.sin(Date.now() / 500 + i) * 0.3 + 0.7;
+        if (i % 8 === 0) {
+          // Glowing mushrooms
+          ctx.fillStyle = `rgba(147, 51, 234, ${pulse})`;
+          ctx.beginPath();
+          ctx.ellipse(x, y, 5, 3, 0, 0, Math.PI);
+          ctx.fill();
+          ctx.fillStyle = '#fdf4ff';
+          ctx.fillRect(x - 1, y, 2, 5);
+        } else if (i % 5 === 0) {
+          // Floating sparkles
+          const sparkleY = y + Math.sin(Date.now() / 300 + x) * 3;
+          ctx.fillStyle = `rgba(250, 240, 137, ${pulse})`;
+          ctx.beginPath();
+          ctx.arc(x, sparkleY, 2, 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          // Magical ground particles
+          ctx.fillStyle = rng.next() > 0.5 ? '#c4b5fd' : '#a855f7';
+          ctx.beginPath();
+          ctx.arc(x, y, 1 + rng.next(), 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      // Floating orbs
+      for (let i = 0; i < 3; i++) {
+        const ox = rng.range(50, CANVAS_WIDTH - 50);
+        const oy = rng.range(50, CANVAS_HEIGHT - 100);
+        const float = Math.sin(Date.now() / 400 + i * 2) * 8;
+        const glow = 0.3 + Math.sin(Date.now() / 300 + i) * 0.2;
+        ctx.fillStyle = `rgba(192, 132, 252, ${glow})`;
+        ctx.beginPath();
+        ctx.arc(ox, oy + float, 8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#fdf4ff';
+        ctx.beginPath();
+        ctx.arc(ox, oy + float, 3, 0, Math.PI * 2);
+        ctx.fill();
       }
     }
   };
@@ -1063,6 +1252,45 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
 
       ctx.fillStyle = '#78350f';
       ctx.fillRect(x - 2, bankY - 20, 4, 10);
+    }
+
+    // === BRIDGE ===
+    const bridgeX = getBridgeX(currentScreen.x, currentScreen.y);
+    const bridgeCenterGlobalX = currentScreen.x * CANVAS_WIDTH + bridgeX;
+    const bridgeCenterY = getRiverY(bridgeCenterGlobalX);
+    const bridgeTopY = bridgeCenterY - 55;
+    const bridgeBottomY = bridgeCenterY + 55;
+
+    // Bridge support posts (dark wood)
+    ctx.fillStyle = '#5c4033';
+    ctx.fillRect(bridgeX - BRIDGE_WIDTH / 2 - 5, bridgeTopY - 10, 10, bridgeBottomY - bridgeTopY + 20);
+    ctx.fillRect(bridgeX + BRIDGE_WIDTH / 2 - 5, bridgeTopY - 10, 10, bridgeBottomY - bridgeTopY + 20);
+
+    // Bridge planks (lighter wood)
+    ctx.fillStyle = '#a0826d';
+    for (let py = bridgeTopY; py < bridgeBottomY; py += 8) {
+      ctx.fillRect(bridgeX - BRIDGE_WIDTH / 2 + 5, py, BRIDGE_WIDTH - 10, 6);
+    }
+
+    // Bridge plank outlines for depth
+    ctx.strokeStyle = '#6b4423';
+    ctx.lineWidth = 1;
+    for (let py = bridgeTopY; py < bridgeBottomY; py += 8) {
+      ctx.strokeRect(bridgeX - BRIDGE_WIDTH / 2 + 5, py, BRIDGE_WIDTH - 10, 6);
+    }
+
+    // Bridge railings
+    ctx.fillStyle = '#8b7355';
+    // Left railing
+    ctx.fillRect(bridgeX - BRIDGE_WIDTH / 2 + 2, bridgeTopY - 5, 4, bridgeBottomY - bridgeTopY + 10);
+    // Right railing  
+    ctx.fillRect(bridgeX + BRIDGE_WIDTH / 2 - 6, bridgeTopY - 5, 4, bridgeBottomY - bridgeTopY + 10);
+
+    // Railing posts
+    ctx.fillStyle = '#6b4423';
+    for (let py = bridgeTopY; py <= bridgeBottomY; py += 25) {
+      ctx.fillRect(bridgeX - BRIDGE_WIDTH / 2, py - 3, 8, 10);
+      ctx.fillRect(bridgeX + BRIDGE_WIDTH / 2 - 8, py - 3, 8, 10);
     }
   };
 
@@ -1543,6 +1771,317 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
         ctx.fillStyle = '#1e293b'; // Dark blue center
         ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 3, 0, Math.PI * 2); ctx.fill();
         break;
+
+      // === TROPICAL BIOME FLOWERS ===
+      case FlowerType.BIRD_OF_PARADISE:
+        // Exotic spiky orange/purple flower
+        ctx.fillStyle = '#f97316'; // Orange
+        ctx.beginPath();
+        ctx.moveTo(f.x + sway - 8, f.y - 10);
+        ctx.lineTo(f.x + sway + 8, f.y - 20);
+        ctx.lineTo(f.x + sway + 5, f.y - 12);
+        ctx.fill();
+        ctx.fillStyle = '#7c3aed'; // Purple accent
+        ctx.beginPath();
+        ctx.moveTo(f.x + sway - 5, f.y - 12);
+        ctx.lineTo(f.x + sway + 3, f.y - 22);
+        ctx.lineTo(f.x + sway + 0, f.y - 15);
+        ctx.fill();
+        break;
+      case FlowerType.PLUMERIA:
+        // 5 rounded white-pink petals
+        ctx.fillStyle = f.color;
+        for (let i = 0; i < 5; i++) {
+          const ang = (i / 5) * Math.PI * 2 - Math.PI / 2;
+          ctx.beginPath();
+          ctx.ellipse(f.x + sway + Math.cos(ang) * 5, f.y - 14 + Math.sin(ang) * 5, 4, 2.5, ang, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = '#fef08a'; // Yellow center
+        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 3, 0, Math.PI * 2); ctx.fill();
+        break;
+      case FlowerType.PASSION_FLOWER:
+        // Complex circular purple flower
+        ctx.fillStyle = f.color;
+        for (let i = 0; i < 10; i++) {
+          const ang = (i / 10) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.moveTo(f.x + sway, f.y - 14);
+          ctx.lineTo(f.x + sway + Math.cos(ang) * 8, f.y - 14 + Math.sin(ang) * 8);
+          ctx.stroke();
+        }
+        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 4, 0, Math.PI * 2); ctx.fill();
+        break;
+      case FlowerType.FRANGIPANI:
+        // Cream/yellow spiral petals
+        ctx.fillStyle = f.color;
+        for (let i = 0; i < 5; i++) {
+          const ang = (i / 5) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.ellipse(f.x + sway + Math.cos(ang) * 4, f.y - 14 + Math.sin(ang) * 4, 4, 2, ang + 0.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = '#fbbf24'; // Golden center
+        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 2, 0, Math.PI * 2); ctx.fill();
+        break;
+
+      // === MOUNTAIN BIOME FLOWERS ===
+      case FlowerType.EDELWEISS:
+        // White star-shaped alpine flower
+        ctx.fillStyle = f.color;
+        for (let i = 0; i < 8; i++) {
+          const ang = (i / 8) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.ellipse(f.x + sway + Math.cos(ang) * 5, f.y - 14 + Math.sin(ang) * 5, 3, 1.5, ang, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = '#fef9c3'; // Fuzzy center
+        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 3, 0, Math.PI * 2); ctx.fill();
+        break;
+      case FlowerType.ALPINE_ROSE:
+        // Pink cluster
+        ctx.fillStyle = f.color;
+        ctx.beginPath(); ctx.arc(f.x + sway - 3, f.y - 16, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(f.x + sway + 3, f.y - 14, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 12, 3, 0, Math.PI * 2); ctx.fill();
+        break;
+      case FlowerType.GENTIAN:
+        // Deep blue bell-shaped
+        ctx.fillStyle = f.color;
+        ctx.beginPath();
+        ctx.moveTo(f.x + sway - 5, f.y - 10);
+        ctx.quadraticCurveTo(f.x + sway, f.y - 20, f.x + sway + 5, f.y - 10);
+        ctx.lineTo(f.x + sway + 3, f.y - 8);
+        ctx.quadraticCurveTo(f.x + sway, f.y - 14, f.x + sway - 3, f.y - 8);
+        ctx.fill();
+        break;
+      case FlowerType.COLUMBINE:
+        // Unique spurred petals
+        ctx.fillStyle = f.color;
+        for (let i = 0; i < 5; i++) {
+          const ang = (i / 5) * Math.PI * 2 - Math.PI / 2;
+          ctx.beginPath();
+          ctx.moveTo(f.x + sway, f.y - 14);
+          ctx.lineTo(f.x + sway + Math.cos(ang) * 8, f.y - 14 + Math.sin(ang) * 8);
+          ctx.lineTo(f.x + sway + Math.cos(ang + 0.3) * 5, f.y - 14 + Math.sin(ang + 0.3) * 5);
+          ctx.fill();
+        }
+        ctx.fillStyle = '#fef08a';
+        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 2, 0, Math.PI * 2); ctx.fill();
+        break;
+
+      // === MEADOW BIOME FLOWERS ===
+      case FlowerType.BLACK_EYED_SUSAN:
+        // Yellow petals with brown center
+        ctx.fillStyle = f.color;
+        for (let i = 0; i < 10; i++) {
+          const ang = (i / 10) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.ellipse(f.x + sway + Math.cos(ang) * 6, f.y - 14 + Math.sin(ang) * 6, 3, 1.5, ang, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = '#78350f'; // Brown center
+        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 4, 0, Math.PI * 2); ctx.fill();
+        break;
+      case FlowerType.CORNFLOWER:
+        // Blue spiky petals
+        ctx.fillStyle = f.color;
+        for (let i = 0; i < 12; i++) {
+          const ang = (i / 12) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.moveTo(f.x + sway, f.y - 14);
+          ctx.lineTo(f.x + sway + Math.cos(ang) * 7, f.y - 14 + Math.sin(ang) * 7);
+          ctx.lineTo(f.x + sway + Math.cos(ang + 0.15) * 4, f.y - 14 + Math.sin(ang + 0.15) * 4);
+          ctx.fill();
+        }
+        ctx.fillStyle = '#1e3a8a'; // Darker center
+        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 2, 0, Math.PI * 2); ctx.fill();
+        break;
+      case FlowerType.CLOVER:
+        // Pink/purple round ball cluster
+        ctx.fillStyle = f.color;
+        for (let i = 0; i < 20; i++) {
+          const ang = (i / 20) * Math.PI * 2;
+          const r = 3 + (i % 3);
+          ctx.beginPath();
+          ctx.arc(f.x + sway + Math.cos(ang) * r * 0.5, f.y - 14 + Math.sin(ang) * r * 0.5, 1.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        break;
+      case FlowerType.WILDFLOWER:
+        // Generic colorful multi-petal
+        ctx.fillStyle = f.color;
+        for (let i = 0; i < 6; i++) {
+          const ang = (i / 6) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.ellipse(f.x + sway + Math.cos(ang) * 4, f.y - 14 + Math.sin(ang) * 4, 3, 2, ang, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = '#fef08a';
+        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 2, 0, Math.PI * 2); ctx.fill();
+        break;
+
+      // === SWAMP BIOME FLOWERS ===
+      case FlowerType.WATER_LILY:
+        // Floating on water pad
+        ctx.fillStyle = '#16a34a'; // Green pad
+        ctx.beginPath();
+        ctx.ellipse(f.x, f.y, 12, 5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = f.color;
+        for (let i = 0; i < 5; i++) {
+          const ang = (i / 5) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.ellipse(f.x + Math.cos(ang) * 4, f.y - 3 + Math.sin(ang) * 2, 4, 2, ang, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = '#fef08a';
+        ctx.beginPath(); ctx.arc(f.x, f.y - 3, 2, 0, Math.PI * 2); ctx.fill();
+        break;
+      case FlowerType.SWAMP_ROSE:
+        // Wild rose with thorny stem
+        ctx.fillStyle = f.color;
+        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#fbbf24';
+        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 2, 0, Math.PI * 2); ctx.fill();
+        break;
+      case FlowerType.MARSH_MARIGOLD:
+        // Bright yellow marsh flower
+        ctx.fillStyle = f.color;
+        for (let i = 0; i < 5; i++) {
+          const ang = (i / 5) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.ellipse(f.x + sway + Math.cos(ang) * 5, f.y - 14 + Math.sin(ang) * 5, 4, 2.5, ang, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = '#ca8a04';
+        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 3, 0, Math.PI * 2); ctx.fill();
+        break;
+      case FlowerType.CATTAIL:
+        // Tall brown spike
+        ctx.fillStyle = '#166534';
+        ctx.fillRect(f.x - 1, f.y - 25, 2, 25);
+        ctx.fillStyle = f.color;
+        ctx.beginPath();
+        ctx.ellipse(f.x, f.y - 20, 3, 8, 0, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+
+      // === TUNDRA BIOME FLOWERS ===
+      case FlowerType.ARCTIC_POPPY:
+        // Delicate yellow poppy
+        ctx.fillStyle = f.color;
+        for (let i = 0; i < 4; i++) {
+          const ang = (i / 4) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.ellipse(f.x + sway + Math.cos(ang) * 4, f.y - 14 + Math.sin(ang) * 4, 4, 3, ang, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = '#422006';
+        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 2, 0, Math.PI * 2); ctx.fill();
+        break;
+      case FlowerType.MOSS_CAMPION:
+        // Low cushion of pink flowers
+        ctx.fillStyle = '#166534';
+        ctx.beginPath();
+        ctx.ellipse(f.x, f.y - 2, 10, 4, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = f.color;
+        for (let i = 0; i < 8; i++) {
+          const px = f.x + (Math.random() - 0.5) * 16;
+          const py = f.y - 4 + (Math.random() - 0.5) * 4;
+          ctx.beginPath(); ctx.arc(px, py, 2, 0, Math.PI * 2); ctx.fill();
+        }
+        break;
+      case FlowerType.PURPLE_SAXIFRAGE:
+        // Purple star-shaped alpine flower
+        ctx.fillStyle = f.color;
+        for (let i = 0; i < 5; i++) {
+          const ang = (i / 5) * Math.PI * 2 - Math.PI / 2;
+          ctx.beginPath();
+          ctx.moveTo(f.x + sway, f.y - 14);
+          ctx.lineTo(f.x + sway + Math.cos(ang) * 6, f.y - 14 + Math.sin(ang) * 6);
+          ctx.lineTo(f.x + sway + Math.cos(ang + 0.3) * 3, f.y - 14 + Math.sin(ang + 0.3) * 3);
+          ctx.fill();
+        }
+        break;
+      case FlowerType.SNOW_CROCUS:
+        // Pale purple emerging from snow
+        ctx.fillStyle = '#f8fafc'; // Snow base
+        ctx.beginPath();
+        ctx.ellipse(f.x, f.y, 8, 3, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = f.color;
+        ctx.beginPath();
+        ctx.moveTo(f.x - 3 + sway, f.y - 2);
+        ctx.lineTo(f.x + sway, f.y - 12);
+        ctx.lineTo(f.x + 3 + sway, f.y - 2);
+        ctx.fill();
+        break;
+
+      // === ENCHANTED BIOME FLOWERS ===
+      case FlowerType.MOONFLOWER:
+        // Glowing white night flower
+        const moonGlow = 0.5 + Math.sin(Date.now() / 400) * 0.3;
+        ctx.fillStyle = `rgba(224, 231, 255, ${moonGlow})`;
+        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 10, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = f.color;
+        for (let i = 0; i < 6; i++) {
+          const ang = (i / 6) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.ellipse(f.x + sway + Math.cos(ang) * 5, f.y - 14 + Math.sin(ang) * 5, 4, 2, ang, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        break;
+      case FlowerType.STARBLOOM:
+        // Golden star-shaped magical flower
+        const starGlow = 0.7 + Math.sin(Date.now() / 300) * 0.3;
+        ctx.fillStyle = `rgba(254, 240, 138, ${starGlow})`;
+        for (let i = 0; i < 5; i++) {
+          const ang = (i / 5) * Math.PI * 2 - Math.PI / 2;
+          ctx.beginPath();
+          ctx.moveTo(f.x + sway, f.y - 14);
+          ctx.lineTo(f.x + sway + Math.cos(ang) * 8, f.y - 14 + Math.sin(ang) * 8);
+          ctx.lineTo(f.x + sway + Math.cos(ang + 0.6) * 4, f.y - 14 + Math.sin(ang + 0.6) * 4);
+          ctx.fill();
+        }
+        break;
+      case FlowerType.CRYSTAL_ROSE:
+        // Crystalline translucent rose
+        ctx.fillStyle = f.color;
+        ctx.globalAlpha = 0.7;
+        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 0.9;
+        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 1.0;
+        ctx.fillStyle = '#fdf4ff';
+        ctx.beginPath(); ctx.arc(f.x + sway - 1, f.y - 16, 1.5, 0, Math.PI * 2); ctx.fill();
+        break;
+      case FlowerType.FAIRY_BELLS:
+        // Dangling bell-shaped flowers
+        ctx.fillStyle = f.color;
+        for (let i = 0; i < 3; i++) {
+          const bellX = f.x + sway + (i - 1) * 5;
+          const bellY = f.y - 10 - i * 3;
+          ctx.beginPath();
+          ctx.ellipse(bellX, bellY, 3, 4, 0, 0, Math.PI);
+          ctx.fill();
+        }
+        break;
+      case FlowerType.GLOWSHROOM:
+        // Bioluminescent mushroom
+        const shroomGlow = 0.6 + Math.sin(Date.now() / 350) * 0.4;
+        ctx.fillStyle = `rgba(74, 222, 128, ${shroomGlow})`;
+        ctx.beginPath();
+        ctx.ellipse(f.x, f.y - 8, 8, 5, 0, 0, Math.PI);
+        ctx.fill();
+        ctx.fillStyle = '#fdf4ff';
+        ctx.fillRect(f.x - 2, f.y - 4, 4, 8);
+        // Glow effect
+        ctx.fillStyle = `rgba(74, 222, 128, ${shroomGlow * 0.3})`;
+        ctx.beginPath(); ctx.arc(f.x, f.y - 6, 12, 0, Math.PI * 2); ctx.fill();
+        break;
+
       default:
         // Generic 3-petal
         ctx.fillStyle = f.color;

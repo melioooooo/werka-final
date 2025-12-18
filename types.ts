@@ -44,14 +44,51 @@ export enum FlowerType {
   FOXGLOVE = 'Foxglove',
   COSMOS = 'Cosmos',
   ZINNIA = 'Zinnia',
-  ANEMONE = 'Anemone'
+  ANEMONE = 'Anemone',
+  // Tropical biome flowers
+  BIRD_OF_PARADISE = 'Bird of Paradise',
+  PLUMERIA = 'Plumeria',
+  PASSION_FLOWER = 'Passion Flower',
+  FRANGIPANI = 'Frangipani',
+  // Mountain biome flowers
+  EDELWEISS = 'Edelweiss',
+  ALPINE_ROSE = 'Alpine Rose',
+  GENTIAN = 'Gentian',
+  COLUMBINE = 'Columbine',
+  // Meadow biome flowers
+  BLACK_EYED_SUSAN = 'Black-Eyed Susan',
+  CORNFLOWER = 'Cornflower',
+  CLOVER = 'Clover',
+  WILDFLOWER = 'Wildflower',
+  // Swamp biome flowers
+  WATER_LILY = 'Water Lily',
+  SWAMP_ROSE = 'Swamp Rose',
+  MARSH_MARIGOLD = 'Marsh Marigold',
+  CATTAIL = 'Cattail',
+  // Tundra biome flowers
+  ARCTIC_POPPY = 'Arctic Poppy',
+  MOSS_CAMPION = 'Moss Campion',
+  PURPLE_SAXIFRAGE = 'Purple Saxifrage',
+  SNOW_CROCUS = 'Snow Crocus',
+  // Enchanted biome flowers
+  MOONFLOWER = 'Moonflower',
+  STARBLOOM = 'Starbloom',
+  CRYSTAL_ROSE = 'Crystal Rose',
+  FAIRY_BELLS = 'Fairy Bells',
+  GLOWSHROOM = 'Glowshroom'
 }
 
 export enum Biome {
   GRASS = 'GRASS',
   FOREST = 'FOREST',
   DESERT = 'DESERT',
-  RIVER = 'RIVER'
+  RIVER = 'RIVER',
+  TROPICAL = 'TROPICAL',
+  MOUNTAIN = 'MOUNTAIN',
+  MEADOW = 'MEADOW',
+  SWAMP = 'SWAMP',
+  TUNDRA = 'TUNDRA',
+  ENCHANTED = 'ENCHANTED'
 }
 
 export interface Flower {
@@ -81,12 +118,7 @@ export interface Player {
   inventory: Flower[];
 }
 
-export enum Season {
-  SPRING = 'SPRING',
-  SUMMER = 'SUMMER',
-  AUTUMN = 'AUTUMN',
-  WINTER = 'WINTER'
-}
+
 
 export interface Bouquet {
   id: string;

@@ -1,4 +1,4 @@
-import { FlowerType, Biome, Season } from './types';
+import { FlowerType, Biome } from './types';
 
 export const CANVAS_WIDTH = 1024;
 export const CANVAS_HEIGHT = 768;
@@ -74,60 +74,69 @@ export const FLOWER_COLORS: Record<FlowerType, string> = {
   [FlowerType.FOXGLOVE]: '#c026d3',   // Fuchsia-600
   [FlowerType.COSMOS]: '#f9a8d4',     // Pink-300
   [FlowerType.ZINNIA]: '#fb7185',     // Rose-400
-  [FlowerType.ANEMONE]: '#f43f5e'     // Rose-500
+  [FlowerType.ANEMONE]: '#f43f5e',    // Rose-500
+  // Tropical biome flower colors
+  [FlowerType.BIRD_OF_PARADISE]: '#f97316', // Orange-500 (vibrant orange)
+  [FlowerType.PLUMERIA]: '#fdf4ff',   // Fuchsia-50 (white with pink)
+  [FlowerType.PASSION_FLOWER]: '#a855f7', // Purple-500
+  [FlowerType.FRANGIPANI]: '#fef08a', // Yellow-200 (cream yellow)
+  // Mountain biome flower colors
+  [FlowerType.EDELWEISS]: '#f5f5f4',  // Stone-100 (white)
+  [FlowerType.ALPINE_ROSE]: '#e11d48', // Rose-600 (bright pink)
+  [FlowerType.GENTIAN]: '#2563eb',    // Blue-600 (deep blue)
+  [FlowerType.COLUMBINE]: '#8b5cf6',  // Violet-500
+  // Meadow biome flower colors
+  [FlowerType.BLACK_EYED_SUSAN]: '#fbbf24', // Amber-400 (golden yellow)
+  [FlowerType.CORNFLOWER]: '#3b82f6', // Blue-500
+  [FlowerType.CLOVER]: '#ec4899',     // Pink-500
+  [FlowerType.WILDFLOWER]: '#f472b6', // Pink-400 (mixed wildflower)
+  // Swamp biome flower colors
+  [FlowerType.WATER_LILY]: '#fdf4ff', // Fuchsia-50 (white/pink)
+  [FlowerType.SWAMP_ROSE]: '#f43f5e', // Rose-500
+  [FlowerType.MARSH_MARIGOLD]: '#facc15', // Yellow-400
+  [FlowerType.CATTAIL]: '#78350f',    // Amber-900 (brown)
+  // Tundra biome flower colors
+  [FlowerType.ARCTIC_POPPY]: '#fef08a', // Yellow-200 (pale yellow)
+  [FlowerType.MOSS_CAMPION]: '#f472b6', // Pink-400
+  [FlowerType.PURPLE_SAXIFRAGE]: '#a855f7', // Purple-500
+  [FlowerType.SNOW_CROCUS]: '#e9d5ff', // Purple-200 (pale purple)
+  // Enchanted biome flower colors
+  [FlowerType.MOONFLOWER]: '#e0e7ff', // Indigo-100 (pale moonlight)
+  [FlowerType.STARBLOOM]: '#fef08a',  // Yellow-200 (golden star)
+  [FlowerType.CRYSTAL_ROSE]: '#c4b5fd', // Violet-300 (crystal)
+  [FlowerType.FAIRY_BELLS]: '#a5f3fc', // Cyan-200 (fairy light)
+  [FlowerType.GLOWSHROOM]: '#4ade80'  // Green-400 (bioluminescent)
 };
 
 export const BIOME_COLORS: Record<Biome, string> = {
   [Biome.GRASS]: '#4ade80',
   [Biome.FOREST]: '#15803d',
   [Biome.DESERT]: '#fed7aa',
-  [Biome.RIVER]: '#4ade80' // Base grass, river drawn on top
+  [Biome.RIVER]: '#4ade80', // Base grass, river drawn on top
+  [Biome.TROPICAL]: '#14b8a6', // Teal-500 (lush tropical)
+  [Biome.MOUNTAIN]: '#78716c', // Stone-500 (rocky grey)
+  [Biome.MEADOW]: '#a3e635', // Lime-400 (bright meadow)
+  [Biome.SWAMP]: '#365314', // Lime-900 (murky dark green)
+  [Biome.TUNDRA]: '#e0f2fe', // Sky-100 (icy pale blue)
+  [Biome.ENCHANTED]: '#a855f7' // Purple-500 (magical purple)
 };
 
 export const BIOME_BG_COLORS: Record<Biome, string> = {
   [Biome.GRASS]: '#4ade80',
   [Biome.FOREST]: '#166534',
   [Biome.DESERT]: '#fed7aa',
-  [Biome.RIVER]: '#22c55e'
+  [Biome.RIVER]: '#22c55e',
+  [Biome.TROPICAL]: '#0d9488', // Teal-600 (darker tropical green)
+  [Biome.MOUNTAIN]: '#57534e', // Stone-600 (mountain grey)
+  [Biome.MEADOW]: '#84cc16', // Lime-500 (golden meadow)
+  [Biome.SWAMP]: '#1a2e05', // Very dark murky green
+  [Biome.TUNDRA]: '#bae6fd', // Sky-200 (icy blue)
+  [Biome.ENCHANTED]: '#7e22ce' // Purple-700 (deep magical purple)
 };
 
-// --- SEASONS CONFIG ---
-export const SEASON_DURATION = 60000; // 1 minute per season for testing (real game: 5-10 mins)
+
+// --- SEASONS CONFIG (REMOVED) ---
 export const DAY_CYCLE_DURATION = 600000; // 10 minutes (5m day / 5m night)
-
-export const SEASON_COLORS: Record<Season, Record<Biome, string>> = {
-  [Season.SPRING]: {
-    [Biome.GRASS]: '#4ade80', // Fresh Green
-    [Biome.FOREST]: '#166534',
-    [Biome.DESERT]: '#fed7aa',
-    [Biome.RIVER]: '#4ade80'
-  },
-  [Season.SUMMER]: {
-    [Biome.GRASS]: '#84cc16', // Vibrant/Yellowish Green
-    [Biome.FOREST]: '#15803d',
-    [Biome.DESERT]: '#fde047', // Hotter sand
-    [Biome.RIVER]: '#22c55e'
-  },
-  [Season.AUTUMN]: {
-    [Biome.GRASS]: '#d97706', // Orange/Brown
-    [Biome.FOREST]: '#b45309', // Darker Orange
-    [Biome.DESERT]: '#fdba74',
-    [Biome.RIVER]: '#84cc16' // Murkier water
-  },
-  [Season.WINTER]: {
-    [Biome.GRASS]: '#e5e7eb', // Snowy White/Grey
-    [Biome.FOREST]: '#374151', // Dark Grey Trees
-    [Biome.DESERT]: '#d1d5db', // Cold Sand
-    [Biome.RIVER]: '#93c5fd' // Icy Blue
-  }
-};
-
-export const SEASON_FLOWERS: Record<Season, FlowerType[]> = {
-  [Season.SPRING]: [FlowerType.TULIP, FlowerType.DAFFODIL, FlowerType.CHERRY_BLOSSOM, FlowerType.BLUEBELL, FlowerType.LILY, FlowerType.VIOLET, FlowerType.BUTTERCUP, FlowerType.IRIS, FlowerType.MAGNOLIA, FlowerType.WISTERIA],
-  [Season.SUMMER]: [FlowerType.ROSE, FlowerType.SUNFLOWER, FlowerType.LAVENDER, FlowerType.HIBISCUS, FlowerType.POPPY, FlowerType.LOTUS, FlowerType.SNAPDRAGON, FlowerType.COSMOS, FlowerType.ZINNIA],
-  [Season.AUTUMN]: [FlowerType.MARIGOLD, FlowerType.PEONY, FlowerType.ORCHID, FlowerType.CACTUS, FlowerType.CHRYSANTHEMUM, FlowerType.ANEMONE],
-  [Season.WINTER]: [FlowerType.JASMINE, FlowerType.DAISY, FlowerType.CAMELLIA, FlowerType.FOXGLOVE]
-};
 
 export const HOUSE_SCREEN = { x: 1, y: 1 };
 

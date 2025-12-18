@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
+import { SoundManager } from '../utils/SoundManager';
 import { Flower, Player } from '../types';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, PLAYER_SPEED, PLAYER_SPRITES, SPRITE_SIZE, SPRITE_SCALE, SPRITE_COUNTS, ANIMATION_SPEED } from '../constants';
 import { InventoryHUD } from './InventoryHUD';
@@ -10,21 +11,32 @@ interface HouseInteriorProps {
 }
 
 const FURNITURE_COLLISIONS = [
-    { x: 280, y: 0, width: 200, height: 180 },
-    { x: 520, y: 50, width: 120, height: 100 },
-    { x: 680, y: 50, width: 60, height: 150 },
-    { x: 380, y: 220, width: 80, height: 80 },
-    { x: 580, y: 350, width: 150, height: 100 },
-    { x: 0, y: 0, width: 150, height: 350 },
-    { x: 80, y: 520, width: 120, height: 80 },
-    { x: 720, y: 480, width: 100, height: 100 },
-    { x: 0, y: 0, width: CANVAS_WIDTH, height: 50 },
-    { x: 0, y: 350, width: 80, height: 250 },
-    { x: 750, y: 200, width: 100, height: 400 },
+    // === TOP WALL / BACKGROUND AREA ===
+    { x: 0, y: 0, width: CANVAS_WIDTH, height: 280, name: 'back_wall' },
+
+    // === FIREPLACE (centered at top) ===
+    { x: 420, y: 250, width: 185, height: 60, name: 'fireplace' },
+
+    // === FURNITURE ON TOP WALL ===
+    { x: 610, y: 200, width: 100, height: 140, name: 'bookshelf' },
+    { x: 715, y: 200, width: 45, height: 140, name: 'grandfather_clock' },
+    { x: 335, y: 275, width: 65, height: 50, name: 'side_table_left' },
+    { x: 415, y: 295, width: 45, height: 40, name: 'small_stand' },
+
+    // === CENTER FURNITURE ===
+    { x: 550, y: 360, width: 90, height: 80, name: 'armchair' },
+
+    // === RIGHT SIDE FURNITURE ===
+    { x: 635, y: 440, width: 70, height: 130, name: 'display_table' },
+
+    // === LEFT WALL AREA (Outer bounds) ===
+    { x: 0, y: 0, width: 330, height: CANVAS_HEIGHT, name: 'left_wall' },
+    // === RIGHT WALL AREA (Outer bounds) ===
+    { x: 730, y: 0, width: CANVAS_WIDTH - 730, height: CANVAS_HEIGHT, name: 'right_wall' },
 ];
 
-const DOOR_RECT = { x: 360, y: 580, width: 80, height: 50 };
-const CRAFTING_TABLE_RECT = { x: 580, y: 350, width: 150, height: 120 };
+const DOOR_RECT = { x: 470, y: 650, width: 85, height: 50 };
+const CRAFTING_TABLE_RECT = { x: 550, y: 360, width: 90, height: 80 }; // Armchair as crafting spot? Or the table?
 
 export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, onExit, onCraft }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -72,17 +84,27 @@ export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, onExit,
         loadSprites();
     }, []);
 
+    const handleInteraction = useCallback(() => {
+        const p = playerRef.current;
+        // Check Door Reach
+        if (p.x > DOOR_RECT.x && p.x < DOOR_RECT.x + DOOR_RECT.width && p.y > DOOR_RECT.y - 30) {
+            SoundManager.getInstance().playSFX('ENTER');
+            onExit();
+            return;
+        }
+        // Check Crafting Table
+        const dist = Math.sqrt(Math.pow(p.x - (CRAFTING_TABLE_RECT.x + 75), 2) + Math.pow(p.y - (CRAFTING_TABLE_RECT.y + 60), 2));
+        if (dist < 100 && inventory.length > 0) {
+            SoundManager.getInstance().playSFX('PICK'); // Or a bespoke crafting sound if available
+            onCraft();
+        }
+    }, [onExit, onCraft, inventory.length]);
+
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             keysPressed.current.add(e.code);
             if (e.code === 'KeyE' || e.code === 'Space') {
-                const p = playerRef.current;
-                if (p.x > DOOR_RECT.x && p.x < DOOR_RECT.x + DOOR_RECT.width && p.y > DOOR_RECT.y - 30) {
-                    onExit();
-                    return;
-                }
-                const dist = Math.sqrt(Math.pow(p.x - (CRAFTING_TABLE_RECT.x + 75), 2) + Math.pow(p.y - (CRAFTING_TABLE_RECT.y + 60), 2));
-                if (dist < 100 && inventory.length > 0) onCraft();
+                handleInteraction();
             }
             if (e.code === 'Escape') onExit();
         };
@@ -93,17 +115,34 @@ export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, onExit,
             window.removeEventListener('keydown', handleKeyDown);
             window.removeEventListener('keyup', handleKeyUp);
         };
-    }, [onExit, onCraft, inventory.length]);
+    }, [onExit, onCraft, inventory.length, handleInteraction]);
 
     const checkCollision = useCallback((x: number, y: number): boolean => {
-        const r = 15;
+        const r = 15; // Player collision radius
+
+        // Check furniture collisions
         for (const f of FURNITURE_COLLISIONS) {
             if (x + r > f.x && x - r < f.x + f.width && y + r > f.y && y - r < f.y + f.height) return true;
         }
-        if (x < 160 || x > 740 || y < 180 || y > 600) {
-            if (x > DOOR_RECT.x && x < DOOR_RECT.x + DOOR_RECT.width && y > 550) return false;
-            return true;
+
+        // Room bounds - player must stay within these walls
+        const ROOM_LEFT = 330;
+        const ROOM_RIGHT = 730;
+        const ROOM_TOP = 280;
+        const ROOM_BOTTOM = 660;
+
+        // Check if player is trying to go outside room bounds
+        if (x - r < ROOM_LEFT) return true;  // Left wall
+        if (x + r > ROOM_RIGHT) return true; // Right wall
+        if (y - r < ROOM_TOP) return true;   // Top wall
+
+        // Bottom wall - except for the door
+        if (y + r > ROOM_BOTTOM) {
+            // Only allow through the door area
+            const inDoorX = x > DOOR_RECT.x && x < DOOR_RECT.x + DOOR_RECT.width;
+            if (!inDoorX) return true; // Block if not at the door
         }
+
         return false;
     }, []);
 
@@ -174,6 +213,36 @@ export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, onExit,
                     grad.addColorStop(1, 'rgba(255, 150, 50, 0)');
                     ctx.fillStyle = grad;
                     ctx.fillRect(200, 0, 400, 300);
+                    // --- DEBUG HITBOXES ---
+                    const DRAW_DEBUG = false; // Set to true to see hitboxes
+                    if (DRAW_DEBUG) {
+                        ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
+                        ctx.lineWidth = 2;
+                        for (const f of FURNITURE_COLLISIONS) {
+                            ctx.strokeRect(f.x, f.y, f.width, f.height);
+                            ctx.fillStyle = 'rgba(255, 0, 0, 0.1)';
+                            ctx.fillRect(f.x, f.y, f.width, f.height);
+                            ctx.fillStyle = 'white';
+                            ctx.font = '10px Arial';
+                            ctx.fillText(f.name, f.x + 5, f.y + 15);
+                        }
+
+                        // Room bounds
+                        const ROOM_LEFT = 330;
+                        const ROOM_RIGHT = 730;
+                        const ROOM_TOP = 280;
+                        const ROOM_BOTTOM = 660;
+                        ctx.strokeStyle = 'rgba(0, 255, 0, 0.5)';
+                        ctx.strokeRect(ROOM_LEFT, ROOM_TOP, ROOM_RIGHT - ROOM_LEFT, ROOM_BOTTOM - ROOM_TOP);
+
+                        // Door
+                        ctx.strokeStyle = 'rgba(0, 0, 255, 0.5)';
+                        ctx.strokeRect(DOOR_RECT.x, DOOR_RECT.y, DOOR_RECT.width, DOOR_RECT.height);
+
+                        // Crafting table
+                        ctx.strokeStyle = 'rgba(255, 255, 0, 0.5)';
+                        ctx.strokeRect(CRAFTING_TABLE_RECT.x, CRAFTING_TABLE_RECT.y, CRAFTING_TABLE_RECT.width, CRAFTING_TABLE_RECT.height);
+                    }
                 }
             }
             animId = requestAnimationFrame(loop);
@@ -189,11 +258,10 @@ export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, onExit,
 
     const handleMobileAction = () => {
         keysPressed.current.add('KeyE');
-        setTimeout(() => keysPressed.current.delete('KeyE'), 100);
-        const p = playerRef.current;
-        if (p.x > DOOR_RECT.x && p.x < DOOR_RECT.x + DOOR_RECT.width && p.y > DOOR_RECT.y - 30) { onExit(); return; }
-        const dist = Math.sqrt(Math.pow(p.x - (CRAFTING_TABLE_RECT.x + 75), 2) + Math.pow(p.y - (CRAFTING_TABLE_RECT.y + 60), 2));
-        if (dist < 100 && inventory.length > 0) onCraft();
+        // Trigger generic interaction logic
+        handleInteraction();
+        // Clear KeyE after a short delay
+        setTimeout(() => keysPressed.current.delete('KeyE'), 200);
     };
 
     return (
