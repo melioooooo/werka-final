@@ -12,7 +12,7 @@ const StartMenu: React.FC<{
   onReset: () => void;
   bouquets: Bouquet[];
 }> = ({ onStart, onReset, bouquets }) => (
-  <div className="w-full max-w-[800px] h-auto min-h-[70dvh] sm:aspect-[4/3] bg-amber-900 flex flex-col items-center justify-start py-8 sm:py-12 px-4 sm:px-8 rounded-xl border-8 sm:border-[16px] border-amber-950 relative overflow-hidden shadow-2xl">
+  <div className="w-full max-w-[800px] h-full sm:h-auto sm:min-h-[70%] sm:aspect-[4/3] bg-amber-900 flex flex-col items-center justify-start py-8 sm:py-12 px-4 sm:px-8 rounded-xl border-8 sm:border-[16px] border-amber-950 relative overflow-hidden shadow-2xl">
     {/* Background Pattern */}
     <div className="absolute inset-0 opacity-10 pointer-events-none"
       style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23000000' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")` }}>
@@ -93,7 +93,7 @@ const Intro: React.FC<{ date: string; onComplete: () => void }> = ({ date, onCom
   }, [date, onComplete, fullText]);
 
   return (
-    <div className="w-full max-w-[800px] h-auto min-h-[70dvh] sm:aspect-[4/3] bg-black flex items-center justify-center p-6 sm:p-12 rounded-xl border-4 border-stone-800">
+    <div className="w-full max-w-[800px] h-full sm:h-auto sm:min-h-[70%] sm:aspect-[4/3] bg-black flex items-center justify-center p-6 sm:p-12 rounded-xl border-4 border-stone-800">
       <p className="text-green-400 font-mono text-2xl md:text-3xl leading-relaxed typing-cursor">
         {text}
       </p>
@@ -228,11 +228,9 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="h-full w-full bg-neutral-900 flex items-center justify-center p-4 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]">
-
-      <div className="max-w-4xl w-full flex flex-col items-center">
-
-        <div className="transition-all duration-500 transform shadow-2xl rounded-xl">
+    <div className="fixed inset-0 bg-neutral-900 flex items-center justify-center p-2 sm:p-4 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] overflow-hidden">
+      <div className="max-w-4xl w-full h-full flex flex-col items-center justify-center">
+        <div className="w-full h-full max-h-[100%] transition-all duration-500 transform shadow-2xl rounded-xl overflow-hidden flex items-center justify-center">
           {gameState === GameState.START_MENU && (
             <StartMenu onStart={handleStartGame} onReset={handleResetProgress} bouquets={bouquets} />
           )}

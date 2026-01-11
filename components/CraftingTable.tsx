@@ -30,7 +30,7 @@ export const CraftingTable: React.FC<CraftingTableProps> = ({ inventory, onCraft
   };
 
   return (
-    <div className="w-full max-w-[800px] h-auto min-h-[70dvh] sm:aspect-[4/3] bg-amber-900 relative rounded-xl overflow-hidden border-4 border-amber-950 shadow-2xl flex flex-col items-center justify-center p-4 sm:p-8">
+    <div className="w-full max-w-[800px] h-full sm:h-auto sm:min-h-[70%] sm:aspect-[4/3] bg-amber-900 relative rounded-xl overflow-hidden border-4 border-amber-950 shadow-2xl flex flex-col items-center justify-center p-4 sm:p-8">
       <div className="absolute inset-0 opacity-10 pointer-events-none"
         style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23000000' fill-opacity='1' fill-rule='evenodd'%3E%3Ccircle cx='3' cy='3' r='3'/%3E%3Ccircle cx='13' cy='13' r='3'/%3E%3C/g%3E%3C/svg%3E")` }}>
       </div>

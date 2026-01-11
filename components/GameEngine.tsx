@@ -2321,7 +2321,7 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
   };
 
   return (
-    <div className="flex flex-col h-full w-full bg-stone-900 overflow-hidden">
+    <div className="flex flex-col h-full w-full bg-stone-900 overflow-hidden relative">
       {/* GAME SCREEN AREA - Top section */}
       <div className="flex-1 flex items-center justify-center p-2 min-h-0">
         <div
