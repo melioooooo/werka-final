@@ -2321,7 +2321,7 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
   };
 
   return (
-    <div className="flex flex-col h-[100dvh] w-full bg-stone-900">
+    <div className="flex flex-col h-full w-full bg-stone-900 overflow-hidden">
       {/* GAME SCREEN AREA - Top section */}
       <div className="flex-1 flex items-center justify-center p-2 min-h-0">
         <div
@@ -2361,8 +2361,8 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
       </div>
 
       {/* CONTROLS AREA - Bottom section (hidden on desktop) */}
-      <div className="lg:hidden flex-shrink-0 h-44 bg-stone-800 border-t-2 border-stone-600 flex justify-between items-center px-4 sm:px-8"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      <div className="lg:hidden flex-shrink-0 h-48 bg-stone-800 border-t-2 border-stone-600 flex justify-between items-center px-4 sm:px-8 pb-8"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}>
         {/* D-Pad */}
         <div className="grid grid-cols-3 gap-2" style={{ width: '140px', minWidth: '140px' }}>
           <div />

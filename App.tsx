@@ -228,7 +228,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-900 flex items-center justify-center p-4 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]">
+    <div className="h-full w-full bg-neutral-900 flex items-center justify-center p-4 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]">
 
       <div className="max-w-4xl w-full flex flex-col items-center">
 
