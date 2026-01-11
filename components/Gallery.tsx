@@ -47,7 +47,7 @@ export const Gallery: React.FC<GalleryProps> = ({ bouquets, onBack }) => {
   };
 
   return (
-    <div className="w-full max-w-[800px] h-auto max-h-[90vh] aspect-[4/3] bg-slate-900 relative rounded-xl overflow-hidden border-4 border-slate-700 shadow-2xl flex flex-col p-4 sm:p-8">
+    <div className="w-full max-w-[800px] h-auto min-h-[70dvh] sm:aspect-[4/3] bg-slate-900 relative rounded-xl overflow-hidden border-4 border-slate-700 shadow-2xl flex flex-col p-4 sm:p-8">
       <div className="flex justify-between items-center mb-3 sm:mb-6">
         <h2 className="text-xl sm:text-3xl text-purple-200 font-bold pixel-text">My Collection</h2>
         <button

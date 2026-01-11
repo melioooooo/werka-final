@@ -54,13 +54,17 @@ export const generateBouquetImage = async (flowers: FlowerType[]): Promise<strin
 
     if (response.generatedImages && response.generatedImages.length > 0) {
       const base64ImageBytes = response.generatedImages[0].image.imageBytes;
-      return `data:image/jpeg;base64,${base64ImageBytes}`;
+      // Use a more robust way to handle base64 if needed, 
+      // but standard data URL should work if the string is valid.
+      // Ensure there are no whitespace or hidden characters.
+      const cleanedBase64 = base64ImageBytes.replace(/\s/g, '');
+      return `data:image/jpeg;base64,${cleanedBase64}`;
     } else {
       throw new Error("No images returned from Gemini");
     }
   } catch (error) {
     console.error("Failed to generate bouquet:", error);
     // Fallback for development or error cases
-    return "https://picsum.photos/512/512?grayscale";
+    return "https://picsum.photos/512/512";
   }
 };

@@ -30,36 +30,36 @@ export const CraftingTable: React.FC<CraftingTableProps> = ({ inventory, onCraft
   };
 
   return (
-    <div className="w-full max-w-[800px] h-auto max-h-[90dvh] aspect-[4/3] bg-amber-900 relative rounded-xl overflow-hidden border-4 border-amber-950 shadow-2xl flex flex-col items-center justify-center p-4 sm:p-8">
+    <div className="w-full max-w-[800px] h-auto min-h-[70dvh] sm:aspect-[4/3] bg-amber-900 relative rounded-xl overflow-hidden border-4 border-amber-950 shadow-2xl flex flex-col items-center justify-center p-4 sm:p-8">
       <div className="absolute inset-0 opacity-10 pointer-events-none"
         style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23000000' fill-opacity='1' fill-rule='evenodd'%3E%3Ccircle cx='3' cy='3' r='3'/%3E%3Ccircle cx='13' cy='13' r='3'/%3E%3C/g%3E%3C/svg%3E")` }}>
       </div>
 
       <h2 className="text-2xl sm:text-4xl text-amber-100 font-bold mb-2 sm:mb-4 pixel-text z-10 drop-shadow-md">Crafting Station</h2>
 
-      <div className="grid grid-cols-4 gap-2 sm:gap-3 mb-4 sm:mb-8 bg-amber-950/50 p-2 sm:p-4 rounded-lg border border-amber-700/50 max-h-[40vh] overflow-y-auto">
+      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 sm:gap-3 mb-4 sm:mb-8 bg-amber-950/50 p-2 sm:p-4 rounded-lg border border-amber-700/50 max-h-[300px] sm:max-h-[40vh] overflow-y-auto w-full">
         {inventory.map((flower, idx) => (
           <button
             key={idx}
             onClick={() => toggleSelection(idx)}
             className={`
-              relative w-10 h-10 sm:w-16 sm:h-16 rounded-lg flex items-center justify-center transition-all duration-200
+              relative aspect-square w-full rounded-lg flex flex-col items-center justify-center transition-all duration-200 p-1
               ${selectedIndices.has(idx)
-                ? 'bg-green-600 ring-4 ring-yellow-400 scale-110'
+                ? 'bg-green-600 ring-4 ring-yellow-400 scale-105 z-10'
                 : 'bg-black/40 hover:bg-black/60 border border-white/10'}
             `}
           >
             <div
-              className="w-5 h-5 sm:w-8 sm:h-8 rounded-full shadow-lg"
+              className="w-2/3 h-2/3 rounded-full shadow-lg mb-1"
               style={{ backgroundColor: flower.color }}
             />
-            <span className="absolute -bottom-2 text-[8px] bg-black/80 text-white px-1 rounded w-full truncate text-center">{flower.type}</span>
+            <span className="text-[6px] sm:text-[8px] bg-black/80 text-white px-1 rounded w-full truncate text-center">{flower.type}</span>
           </button>
         ))}
 
         {/* Empty slots visualization */}
         {Array.from({ length: Math.max(0, 12 - inventory.length) }).map((_, i) => (
-          <div key={`empty-${i}`} className="w-10 h-10 sm:w-16 sm:h-16 rounded-lg bg-black/20 border border-white/5" />
+          <div key={`empty-${i}`} className="aspect-square w-full rounded-lg bg-black/20 border border-white/5" />
         ))}
       </div>
 

@@ -12,7 +12,7 @@ const StartMenu: React.FC<{
   onReset: () => void;
   bouquets: Bouquet[];
 }> = ({ onStart, onReset, bouquets }) => (
-  <div className="w-full max-w-[800px] h-auto max-h-[85dvh] aspect-[4/3] bg-amber-900 flex flex-col items-center justify-start py-8 sm:py-12 px-4 sm:px-8 rounded-xl border-8 sm:border-[16px] border-amber-950 relative overflow-hidden shadow-2xl">
+  <div className="w-full max-w-[800px] h-auto min-h-[70dvh] sm:aspect-[4/3] bg-amber-900 flex flex-col items-center justify-start py-8 sm:py-12 px-4 sm:px-8 rounded-xl border-8 sm:border-[16px] border-amber-950 relative overflow-hidden shadow-2xl">
     {/* Background Pattern */}
     <div className="absolute inset-0 opacity-10 pointer-events-none"
       style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23000000' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")` }}>
@@ -93,7 +93,7 @@ const Intro: React.FC<{ date: string; onComplete: () => void }> = ({ date, onCom
   }, [date, onComplete, fullText]);
 
   return (
-    <div className="w-full max-w-[800px] h-auto max-h-[85dvh] aspect-[4/3] bg-black flex items-center justify-center p-6 sm:p-12 rounded-xl border-4 border-stone-800">
+    <div className="w-full max-w-[800px] h-auto min-h-[70dvh] sm:aspect-[4/3] bg-black flex items-center justify-center p-6 sm:p-12 rounded-xl border-4 border-stone-800">
       <p className="text-green-400 font-mono text-2xl md:text-3xl leading-relaxed typing-cursor">
         {text}
       </p>
@@ -114,21 +114,31 @@ const App: React.FC = () => {
   const [bouquets, setBouquets] = useState<Bouquet[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [currentDate, setCurrentDate] = useState<string>("");
+  const [currentDateString, setCurrentDateString] = useState<string>("");
 
   useEffect(() => {
     // Set current date on mount
     const d = new Date();
-    setCurrentDate(d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }));
+    const dateString = d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    setCurrentDate(dateString);
+    setCurrentDateString(dateString);
 
     // Load state from localStorage
     const savedInventory = localStorage.getItem('werka_inventory');
     const savedBouquets = localStorage.getItem('werka_bouquets');
+    const lastSavedDate = localStorage.getItem('werka_last_date');
 
     if (savedInventory) {
-      try {
-        setInventory(JSON.parse(savedInventory));
-      } catch (e) {
-        console.error("Failed to load inventory", e);
+      if (lastSavedDate && lastSavedDate !== currentDateString) {
+        console.log("New day detected, resetting inventory.");
+        localStorage.removeItem('werka_inventory');
+        setInventory([]);
+      } else {
+        try {
+          setInventory(JSON.parse(savedInventory));
+        } catch (e) {
+          console.error("Failed to load inventory", e);
+        }
       }
     }
 
@@ -139,7 +149,10 @@ const App: React.FC = () => {
         console.error("Failed to load bouquets", e);
       }
     }
-  }, []);
+
+    // Update last saved date
+    localStorage.setItem('werka_last_date', currentDateString);
+  }, [currentDateString]);
 
   // Save state whenever it changes
   useEffect(() => {

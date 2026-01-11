@@ -2361,34 +2361,34 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
       </div>
 
       {/* CONTROLS AREA - Bottom section (hidden on desktop) */}
-      <div className="lg:hidden flex-shrink-0 h-40 bg-stone-800 border-t-2 border-stone-600 flex justify-between items-center px-6"
+      <div className="lg:hidden flex-shrink-0 h-44 bg-stone-800 border-t-2 border-stone-600 flex justify-between items-center px-4 sm:px-8"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         {/* D-Pad */}
-        <div className="grid grid-cols-3 gap-1" style={{ width: '150px' }}>
+        <div className="grid grid-cols-3 gap-2" style={{ width: '140px', minWidth: '140px' }}>
           <div />
-          <button className="w-12 h-12 bg-stone-700 rounded-lg border-2 border-stone-500 active:bg-stone-600 flex items-center justify-center text-xl text-white font-bold shadow-lg touch-none select-none"
+          <button className="w-10 h-10 sm:w-12 sm:h-12 bg-stone-700 rounded-lg border-2 border-stone-500 active:bg-stone-600 flex items-center justify-center text-xl text-white font-bold shadow-lg touch-none select-none"
             onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', true); }}
             onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', false); }}
             onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', false); }}>▲</button>
           <div />
-          <button className="w-12 h-12 bg-stone-700 rounded-lg border-2 border-stone-500 active:bg-stone-600 flex items-center justify-center text-xl text-white font-bold shadow-lg touch-none select-none"
+          <button className="w-10 h-10 sm:w-12 sm:h-12 bg-stone-700 rounded-lg border-2 border-stone-500 active:bg-stone-600 flex items-center justify-center text-xl text-white font-bold shadow-lg touch-none select-none"
             onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', true); }}
             onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', false); }}
             onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', false); }}>◀</button>
-          <button className="w-12 h-12 bg-stone-700 rounded-lg border-2 border-stone-500 active:bg-stone-600 flex items-center justify-center text-xl text-white font-bold shadow-lg touch-none select-none"
+          <button className="w-10 h-10 sm:w-12 sm:h-12 bg-stone-700 rounded-lg border-2 border-stone-500 active:bg-stone-600 flex items-center justify-center text-xl text-white font-bold shadow-lg touch-none select-none"
             onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', true); }}
             onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', false); }}
             onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', false); }}>▼</button>
-          <button className="w-12 h-12 bg-stone-700 rounded-lg border-2 border-stone-500 active:bg-stone-600 flex items-center justify-center text-xl text-white font-bold shadow-lg touch-none select-none"
+          <button className="w-10 h-10 sm:w-12 sm:h-12 bg-stone-700 rounded-lg border-2 border-stone-500 active:bg-stone-600 flex items-center justify-center text-xl text-white font-bold shadow-lg touch-none select-none"
             onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', true); }}
             onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', false); }}
             onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', false); }}>▶</button>
         </div>
 
         {/* Action Button */}
-        <button className="w-20 h-20 bg-yellow-500 rounded-full border-4 border-yellow-300 active:bg-yellow-400 flex items-center justify-center text-white font-bold shadow-xl touch-none select-none"
+        <button className="w-20 h-20 bg-yellow-500 rounded-full border-4 border-yellow-300 active:bg-yellow-400 flex items-center justify-center text-white font-bold shadow-xl touch-none select-none flex-shrink-0"
           onTouchStart={(e) => { e.preventDefault(); handleActionButton(); }}>
-          <span className="text-sm pixel-text">ACTION</span>
+          <span className="text-xs sm:text-sm pixel-text text-center leading-none">ACTION</span>
         </button>
       </div>
     </div>
