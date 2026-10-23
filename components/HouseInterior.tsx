@@ -3,6 +3,7 @@ import { SoundManager } from '../utils/SoundManager';
 import { Flower, Player } from '../types';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, PLAYER_SPEED, PLAYER_SPRITES, SPRITE_SIZE, SPRITE_SCALE, SPRITE_COUNTS, ANIMATION_SPEED } from '../constants';
 import { InventoryHUD } from './InventoryHUD';
+import { MobileControls, useIsTouch } from './MobileControls';
 
 interface HouseInteriorProps {
     inventory: Flower[];
@@ -40,6 +41,7 @@ const CRAFTING_TABLE_RECT = { x: 550, y: 360, width: 90, height: 80 }; // Armcha
 
 export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, onExit, onCraft }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const touch = useIsTouch();
     const backgroundImageRef = useRef<HTMLImageElement | null>(null);
     const spriteImagesRef = useRef<{ [key: string]: HTMLImageElement }>({});
     const [areSpritesLoaded, setAreSpritesLoaded] = useState(false);
@@ -251,11 +253,6 @@ export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, onExit,
         return () => cancelAnimationFrame(animId);
     }, [isBackgroundLoaded, areSpritesLoaded, checkCollision, inventory.length]);
 
-    const handleMobileControl = (key: string, isPressed: boolean) => {
-        if (isPressed) keysPressed.current.add(key);
-        else keysPressed.current.delete(key);
-    };
-
     const handleMobileAction = () => {
         keysPressed.current.add('KeyE');
         // Trigger generic interaction logic
@@ -279,9 +276,7 @@ export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, onExit,
                         className="w-full h-full"
                     />
                     {/* Desktop Inventory Overlay - hidden on mobile */}
-                    <div className="hidden lg:block">
-                        <InventoryHUD inventory={player.inventory} timeLabel="INSIDE" />
-                    </div>
+                    {!touch && <InventoryHUD inventory={player.inventory} timeLabel="INSIDE" />}
                     {interactionPrompt && (
                         <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-16 bg-black/80 text-white px-4 py-2 rounded border border-white/30 pixel-text text-sm animate-pulse pointer-events-none z-20">
                             {interactionPrompt}
@@ -291,41 +286,9 @@ export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, onExit,
             </div>
 
             {/* MOBILE INVENTORY STRIP - between game and controls (hidden on desktop) */}
-            <div className="lg:hidden flex-shrink-0">
-                <InventoryHUD inventory={player.inventory} timeLabel="INSIDE" isMobile={true} />
-            </div>
+            {touch && <div className="flex-shrink-0"><InventoryHUD inventory={player.inventory} timeLabel="INSIDE" isMobile={true} /></div>}
 
-            {/* CONTROLS AREA - Bottom section (hidden on desktop) */}
-            <div className="lg:hidden flex-shrink-0 h-40 bg-stone-800 border-t-2 border-stone-600 flex justify-between items-center px-6"
-                style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-                {/* D-Pad */}
-                <div className="grid grid-cols-3 gap-1" style={{ width: '150px' }}>
-                    <div />
-                    <button className="w-12 h-12 bg-stone-700 rounded-lg border-2 border-stone-500 active:bg-stone-600 flex items-center justify-center text-xl text-white font-bold shadow-lg touch-none select-none"
-                        onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', true); }}
-                        onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', false); }}
-                        onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', false); }}>▲</button>
-                    <div />
-                    <button className="w-12 h-12 bg-stone-700 rounded-lg border-2 border-stone-500 active:bg-stone-600 flex items-center justify-center text-xl text-white font-bold shadow-lg touch-none select-none"
-                        onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', true); }}
-                        onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', false); }}
-                        onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', false); }}>◀</button>
-                    <button className="w-12 h-12 bg-stone-700 rounded-lg border-2 border-stone-500 active:bg-stone-600 flex items-center justify-center text-xl text-white font-bold shadow-lg touch-none select-none"
-                        onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', true); }}
-                        onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', false); }}
-                        onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', false); }}>▼</button>
-                    <button className="w-12 h-12 bg-stone-700 rounded-lg border-2 border-stone-500 active:bg-stone-600 flex items-center justify-center text-xl text-white font-bold shadow-lg touch-none select-none"
-                        onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', true); }}
-                        onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', false); }}
-                        onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', false); }}>▶</button>
-                </div>
-
-                {/* Action Button */}
-                <button className="w-20 h-20 bg-yellow-500 rounded-full border-4 border-yellow-300 active:bg-yellow-400 flex items-center justify-center text-white font-bold shadow-xl touch-none select-none"
-                    onTouchStart={(e) => { e.preventDefault(); handleMobileAction(); }}>
-                    <span className="text-sm pixel-text">ACTION</span>
-                </button>
-            </div>
+            {touch && <MobileControls keys={keysPressed} prompt={interactionPrompt} onAction={handleMobileAction} />}
         </div>
     );
 };

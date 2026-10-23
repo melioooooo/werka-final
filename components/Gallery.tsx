@@ -1,5 +1,6 @@
 import React from 'react';
 import { Bouquet } from '../types';
+import { bouquetSvgUrl, bouquetJpegBlob } from '../utils/bouquetArt';
 
 interface GalleryProps {
   bouquets: Bouquet[];
@@ -13,21 +14,7 @@ export const Gallery: React.FC<GalleryProps> = ({ bouquets, onBack }) => {
       // Format the filename: "Werka's Bouquet - December 9, 2024.jpg"
       const filename = `Werka's Bouquet - ${bouquet.date}.jpg`;
 
-      let blob: Blob;
-
-      if (bouquet.imageUrl.startsWith('data:')) {
-        // Convert data URL to blob
-        const response = await fetch(bouquet.imageUrl);
-        blob = await response.blob();
-      } else {
-        // Fetch from URL
-        const response = await fetch(bouquet.imageUrl);
-        blob = await response.blob();
-      }
-
-      // Ensure it's JPG format
-      const jpgBlob = new Blob([blob], { type: 'image/jpeg' });
-      const url = window.URL.createObjectURL(jpgBlob);
+      const url = window.URL.createObjectURL(await bouquetJpegBlob(bouquet.flowers, bouquet.imageUrl));
 
       const link = document.createElement('a');
       link.href = url;
@@ -42,7 +29,7 @@ export const Gallery: React.FC<GalleryProps> = ({ bouquets, onBack }) => {
     } catch (error) {
       console.error('Failed to download image:', error);
       // Fallback: open in new tab so user can right-click save
-      window.open(bouquet.imageUrl, '_blank');
+      window.open(bouquet.imageUrl ?? bouquetSvgUrl(bouquet.flowers), '_blank');
     }
   };
 
@@ -69,11 +56,11 @@ export const Gallery: React.FC<GalleryProps> = ({ bouquets, onBack }) => {
             bouquets.map((b) => (
               <div key={b.id} className="bg-white p-3 rounded shadow-xl rotate-1 hover:rotate-0 transition-transform duration-300 group">
                 <div className="aspect-square bg-slate-100 mb-3 overflow-hidden rounded-sm border border-slate-200 relative">
-                  <img src={b.imageUrl} alt="Bouquet" className="w-full h-full object-cover" />
+                  <img src={b.imageUrl ?? bouquetSvgUrl(b.flowers)} alt="Bouquet" style={{ imageRendering: 'pixelated' }} className="w-full h-full object-cover" />
                   {/* Download button overlay */}
                   <button
                     onClick={() => downloadImage(b)}
-                    className="absolute bottom-2 right-2 px-3 py-2 bg-green-600 text-white rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-green-500 flex items-center gap-2 text-sm font-bold"
+                    className="absolute bottom-2 right-2 px-3 py-2 bg-green-600 text-white rounded-lg shadow-lg opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 transition-opacity duration-200 hover:bg-green-500 flex items-center gap-2 text-sm font-bold"
                     title="Save to your device"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

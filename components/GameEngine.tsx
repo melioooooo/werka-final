@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Player, Flower, FlowerType, Biome, Obstacle } from '../types';
 import { InventoryHUD } from './InventoryHUD';
+import { MobileControls, useIsTouch } from './MobileControls';
 import { SoundManager } from '../utils/SoundManager';
 import {
   CANVAS_WIDTH,
@@ -68,8 +69,11 @@ class SeededRandom {
   }
 }
 
+const SAVE_KEY = 'werka-bouquet-save-v1';
+
 export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventoryChange, initialInventory, dateSeed }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const touch = useIsTouch();
   const backgroundCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // Game State
@@ -102,66 +106,51 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
   const particlesRef = useRef<Particle[]>([]);
   const lastStepTime = useRef(0);
   const keysPressed = useRef<Set<string>>(new Set());
+  const pickedIdsRef = useRef<Set<string>>(new Set()); // picked flowers restored from save
+  const enteringRef = useRef(false);
+  const noteTimer = useRef<number>();
+  const latest = useRef<{ update: (dt: number) => void; draw: () => void }>({ update: () => {}, draw: () => {} });
+
+  // One timer for notifications so an older one can't clear a newer message
+  const flash = (msg: string, ms: number) => {
+    setNotification(msg);
+    clearTimeout(noteTimer.current);
+    noteTimer.current = window.setTimeout(() => setNotification(null), ms);
+  };
 
   // No longer using seasonal concept
 
   useEffect(() => {
     SoundManager.getInstance().playBGM();
 
-    // Load Save
-    const saved = localStorage.getItem('werka-bouquet-save-v1');
-    if (saved) {
-      try {
-        const data = JSON.parse(saved);
-        // Force spawn at house, but keep inventory and other progress
-        setPlayer(prev => ({
-          ...prev,
-          inventory: data.player.inventory,
-          // Reset position to house
-          x: CANVAS_WIDTH / 2,
-          y: 300,
-          direction: 'DOWN'
-        }));
-        // Force screen to house
-        setCurrentScreen(HOUSE_SCREEN);
-
-        setFlowers(data.flowers);
-        // We don't restore worldMap directly as it's deterministic from seed,
-        // but we should ensure seed is consistent if we were saving it.
-        // For now, we assume dateSeed prop drives the world generation.
-      } catch (e) {
-        console.error("Failed to load save", e);
-      }
-    } else {
-      // No save, ensure correct start pos
-      setPlayer(prev => ({
-        ...prev,
-        x: CANVAS_WIDTH / 2,
-        y: 300
-      }));
-      setCurrentScreen(HOUSE_SCREEN);
+    // Load Save: only picked flower ids matter. Inventory is owned by App (it also covers crafting).
+    try {
+      const data = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+      if (data?.dateSeed === dateSeed && Array.isArray(data.picked)) pickedIdsRef.current = new Set(data.picked);
+    } catch (e) {
+      console.error("Failed to load save", e);
     }
-
-    // Seasons removed as requested
+    // Always spawn at the house (player ref/state already start there)
+    setCurrentScreen(HOUSE_SCREEN);
 
   }, []);
 
   // Auto-Save
   useEffect(() => {
     const saveGame = () => {
+      if (flowers.length === 0) return; // world not generated yet
       const data = {
-        player: playerRef.current,
-        currentScreen: screenRef.current,
-        flowers: flowers, // This might be large, but necessary for picked status
-        dateSeed: dateSeed
+        picked: flowers.filter(f => f.isPicked).map(f => f.id),
+        dateSeed
       };
-      localStorage.setItem('werka-bouquet-save-v1', JSON.stringify(data));
+      try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch (e) { console.error("Save failed", e); }
     };
 
     const interval = setInterval(saveGame, 5000); // Auto-save every 5s
     window.addEventListener('beforeunload', saveGame);
     return () => {
       clearInterval(interval);
+      saveGame(); // also on unmount (entering the house)
       window.removeEventListener('beforeunload', saveGame);
     };
   }, [flowers, dateSeed]);
@@ -202,7 +191,7 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
   // Helper to get consistent river position across screens
   const getRiverY = (globalX: number) => {
     // Combine multiple sines for organic flow
-    const seedNum = dateSeed.length; // simple constant from seed
+    const seedNum = [...dateSeed].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 97, 0); // full-seed hash
     return (CANVAS_HEIGHT / 2) +
       Math.sin((globalX + seedNum * 100) / 300) * 80 +
       Math.sin((globalX + seedNum * 50) / 100) * 20;
@@ -390,7 +379,7 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
         }
       }
     }
-    setFlowers(newFlowers);
+    setFlowers(newFlowers.map(f => (pickedIdsRef.current.has(f.id) ? { ...f, isPicked: true } : f)));
   }, [dateSeed]); // Removed currentSeason from dependencies
 
   // Obstacles and Decor Generator
@@ -487,11 +476,16 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => keysPressed.current.add(e.code);
     const handleKeyUp = (e: KeyboardEvent) => keysPressed.current.delete(e.code);
+    const clearKeys = () => keysPressed.current.clear(); // keyup never fires after alt-tab
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', clearKeys);
+    document.addEventListener('visibilitychange', clearKeys);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', clearKeys);
+      document.removeEventListener('visibilitychange', clearKeys);
     };
   }, []);
 
@@ -507,7 +501,9 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
     return () => clearInterval(timer);
   }, []);
 
-  // Game Loop
+  // Game Loop: runs once; always calls the latest update/draw (fresh state closures)
+  useEffect(() => { latest.current = { update, draw }; });
+
   useEffect(() => {
     let animationFrameId: number;
     let lastTime = Date.now();
@@ -536,14 +532,14 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
       */
 
       // Update Particles
-      update(dt);
-      draw();
+      latest.current.update(dt);
+      latest.current.draw();
       animationFrameId = requestAnimationFrame(loop);
     };
 
     animationFrameId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(animationFrameId);
-  }, [flowers, player, currentScreen, obstacles, areSpritesLoaded]); // Removed currentSeason
+  }, []);
 
   const update = (dt: number) => {
     const isNight = timeRef.current > 0.8 || timeRef.current < 0.2;
@@ -663,18 +659,19 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
     // Movement Logic using Ref for immediate updates (fixes flicker/lag)
     let { x, y, direction, isMoving, inventory } = playerRef.current;
     let dx = 0, dy = 0;
+    const speed = PLAYER_SPEED * Math.min(dt, 50) / 16.67; // same speed on any refresh rate
 
-    if (keysPressed.current.has('ArrowUp') || keysPressed.current.has('KeyW')) dy -= PLAYER_SPEED;
-    if (keysPressed.current.has('ArrowDown') || keysPressed.current.has('KeyS')) dy += PLAYER_SPEED;
-    if (keysPressed.current.has('ArrowLeft') || keysPressed.current.has('KeyA')) dx -= PLAYER_SPEED;
-    if (keysPressed.current.has('ArrowRight') || keysPressed.current.has('KeyD')) dx += PLAYER_SPEED;
+    if (keysPressed.current.has('ArrowUp') || keysPressed.current.has('KeyW')) dy -= speed;
+    if (keysPressed.current.has('ArrowDown') || keysPressed.current.has('KeyS')) dy += speed;
+    if (keysPressed.current.has('ArrowLeft') || keysPressed.current.has('KeyA')) dx -= speed;
+    if (keysPressed.current.has('ArrowRight') || keysPressed.current.has('KeyD')) dx += speed;
 
     if (dx !== 0 || dy !== 0) {
       isMoving = true;
       if (dx !== 0 && dy !== 0) {
         const length = Math.sqrt(dx * dx + dy * dy);
-        dx = (dx / length) * PLAYER_SPEED;
-        dy = (dy / length) * PLAYER_SPEED;
+        dx = (dx / length) * speed;
+        dy = (dy / length) * speed;
       }
 
       if (dy < 0) direction = 'UP';
@@ -708,7 +705,7 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
             // Check Door
             if (nextX > HOUSE_RECT.doorX && nextX < HOUSE_RECT.doorX + HOUSE_RECT.doorWidth &&
               nextY >= HOUSE_RECT.doorY - 15) {
-              onEnterHouse(inventory);
+              if (!enteringRef.current) { enteringRef.current = true; onEnterHouse(inventory); }
               return; // Stop update
             }
           }
@@ -758,9 +755,6 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
     // Update Ref IMMEDIATELY
     playerRef.current = { ...playerRef.current, x, y, direction, isMoving };
 
-    // Sync React State (throttled or every frame, React handles batching)
-    setPlayer(playerRef.current);
-
     // Footstep sounds
     if (isMoving && Date.now() - lastStepTime.current > 300) {
       SoundManager.getInstance().playSFX('STEP');
@@ -777,6 +771,8 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
       if (distToDoor < 50) {
         prompt = "Press E to Enter";
         if (isInteracting) {
+          if (enteringRef.current) return;
+          enteringRef.current = true;
           SoundManager.getInstance().playSFX('ENTER');
           onEnterHouse(playerRef.current.inventory);
           keysPressed.current.delete('Space');
@@ -814,15 +810,14 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
       !f.isPicked &&
       f.screenX === screenRef.current.x &&
       f.screenY === screenRef.current.y &&
-      Math.sqrt(Math.pow(playerRef.current.x - f.x, 2) + Math.pow(playerRef.current.y - f.y, 2)) < 30
+      Math.sqrt(Math.pow(playerRef.current.x - f.x, 2) + Math.pow(playerRef.current.y - f.y, 2)) < 35 // same radius as the prompt
     );
 
     if (!candidate) return;
 
     // 2. Check inventory space
     if (playerRef.current.inventory.length >= MAX_INVENTORY) {
-      setNotification("Basket full!");
-      setTimeout(() => setNotification(null), 2000);
+      flash("Basket full!", 2000);
       return;
     }
 
@@ -837,18 +832,12 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
     const newInventory = [...playerRef.current.inventory, candidate];
     playerRef.current.inventory = newInventory; // Sync ref immediately to prevent loop overwrite
 
-    setPlayer(prev => {
-      onInventoryChange(newInventory); // Notify parent
-      return {
-        ...prev,
-        inventory: newInventory
-      };
-    });
+    setPlayer(prev => ({ ...prev, inventory: newInventory }));
+    onInventoryChange(newInventory); // Notify parent
 
     // 5. Feedback
     SoundManager.getInstance().playSFX('PICK');
-    setNotification(`Picked ${candidate.type}`);
-    setTimeout(() => setNotification(null), 1000);
+    flash(`Picked ${candidate.type}`, 1000);
   };
 
   // --- DRAWING ---
@@ -2285,35 +2274,6 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
   };
 
-  // --- RESPONSIVE SCALING ---
-  const [isTouchDevice, setIsTouchDevice] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    // Detect touch device - use multiple methods for better iOS compatibility
-    const checkTouch = () => {
-      const hasTouchEvents = 'ontouchstart' in window;
-      const hasPointerEvents = navigator.maxTouchPoints > 0;
-      const isMobileWidth = window.innerWidth <= 1024;
-      const isMobileUserAgent = /iPhone|iPad|iPod|Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-
-      // Show controls if ANY of these are true
-      setIsTouchDevice(hasTouchEvents || hasPointerEvents || (isMobileWidth && isMobileUserAgent));
-    };
-    checkTouch();
-    window.addEventListener('resize', checkTouch);
-    return () => window.removeEventListener('resize', checkTouch);
-  }, []);
-
-  // Mobile control handlers with better touch handling
-  const handleMobileControl = (key: string, isPressed: boolean) => {
-    if (isPressed) {
-      keysPressed.current.add(key);
-    } else {
-      keysPressed.current.delete(key);
-    }
-  };
-
   const handleActionButton = () => {
     keysPressed.current.add('KeyE');
     // Clear after a short delay to ensure the game loop catches it
@@ -2325,7 +2285,6 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
       {/* GAME SCREEN AREA - Top section */}
       <div className="flex-1 flex items-center justify-center p-2 min-h-0">
         <div
-          ref={containerRef}
           className="game-container relative bg-black rounded-lg overflow-hidden border-4 border-stone-700 shadow-2xl max-w-full max-h-full"
           style={{ aspectRatio: `${CANVAS_WIDTH} / ${CANVAS_HEIGHT}` }}
         >
@@ -2337,9 +2296,7 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
           />
 
           {/* Desktop Inventory Overlay - hidden on mobile */}
-          <div className="hidden lg:block">
-            <InventoryHUD inventory={player.inventory} timeLabel={timeLabel} />
-          </div>
+          {!touch && <InventoryHUD inventory={player.inventory} timeLabel={timeLabel} />}
 
           {interactionPrompt && (
             <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-16 bg-black/80 text-white px-4 py-2 rounded border border-white/30 pixel-text text-sm animate-pulse pointer-events-none z-20">
@@ -2356,41 +2313,9 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
       </div>
 
       {/* MOBILE INVENTORY STRIP - between game and controls (hidden on desktop) */}
-      <div className="lg:hidden flex-shrink-0">
-        <InventoryHUD inventory={player.inventory} timeLabel={timeLabel} isMobile={true} />
-      </div>
+      {touch && <div className="flex-shrink-0"><InventoryHUD inventory={player.inventory} timeLabel={timeLabel} isMobile={true} /></div>}
 
-      {/* CONTROLS AREA - Bottom section (hidden on desktop) */}
-      <div className="lg:hidden flex-shrink-0 h-48 bg-stone-800 border-t-2 border-stone-600 flex justify-between items-center px-4 sm:px-8 pb-8"
-        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}>
-        {/* D-Pad */}
-        <div className="grid grid-cols-3 gap-2" style={{ width: '140px', minWidth: '140px' }}>
-          <div />
-          <button className="w-10 h-10 sm:w-12 sm:h-12 bg-stone-700 rounded-lg border-2 border-stone-500 active:bg-stone-600 flex items-center justify-center text-xl text-white font-bold shadow-lg touch-none select-none"
-            onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', true); }}
-            onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', false); }}
-            onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowUp', false); }}>▲</button>
-          <div />
-          <button className="w-10 h-10 sm:w-12 sm:h-12 bg-stone-700 rounded-lg border-2 border-stone-500 active:bg-stone-600 flex items-center justify-center text-xl text-white font-bold shadow-lg touch-none select-none"
-            onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', true); }}
-            onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', false); }}
-            onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowLeft', false); }}>◀</button>
-          <button className="w-10 h-10 sm:w-12 sm:h-12 bg-stone-700 rounded-lg border-2 border-stone-500 active:bg-stone-600 flex items-center justify-center text-xl text-white font-bold shadow-lg touch-none select-none"
-            onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', true); }}
-            onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', false); }}
-            onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowDown', false); }}>▼</button>
-          <button className="w-10 h-10 sm:w-12 sm:h-12 bg-stone-700 rounded-lg border-2 border-stone-500 active:bg-stone-600 flex items-center justify-center text-xl text-white font-bold shadow-lg touch-none select-none"
-            onTouchStart={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', true); }}
-            onTouchEnd={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', false); }}
-            onTouchCancel={(e) => { e.preventDefault(); handleMobileControl('ArrowRight', false); }}>▶</button>
-        </div>
-
-        {/* Action Button */}
-        <button className="w-20 h-20 bg-yellow-500 rounded-full border-4 border-yellow-300 active:bg-yellow-400 flex items-center justify-center text-white font-bold shadow-xl touch-none select-none flex-shrink-0"
-          onTouchStart={(e) => { e.preventDefault(); handleActionButton(); }}>
-          <span className="text-xs sm:text-sm pixel-text text-center leading-none">ACTION</span>
-        </button>
-      </div>
+      {touch && <MobileControls keys={keysPressed} prompt={interactionPrompt} onAction={handleActionButton} />}
     </div>
   );
 };

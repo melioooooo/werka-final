@@ -4,7 +4,29 @@ import { CraftingTable } from './components/CraftingTable';
 import { Gallery } from './components/Gallery';
 import { HouseInterior } from './components/HouseInterior';
 import { GameState, Flower, Bouquet, FlowerType } from './types';
-import { generateBouquetImage } from './services/geminiService';
+import { bouquetSvgUrl, generateBouquetImage } from './utils/bouquetArt';
+
+const SAVE_KEY = 'werka-bouquet-save-v1';
+const getToday = () => new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+const store = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch (e) { console.error('Storage full', e); } };
+
+// Read saved state once, before first render, so the save effects can never overwrite it with empty defaults.
+const loadSaved = () => {
+  const today = getToday();
+  const parse = <T,>(k: string, fallback: T): T => {
+    try { return JSON.parse(localStorage.getItem(k) || 'null') ?? fallback; } catch { return fallback; }
+  };
+  let inventory = parse<Flower[]>('werka_inventory', []);
+  const last = localStorage.getItem('werka_last_date');
+  if (last && last !== today) {
+    console.log("New day detected, resetting inventory.");
+    inventory = [];
+    localStorage.removeItem(SAVE_KEY);
+  }
+  const bouquets = parse<Bouquet[]>('werka_bouquets', []).map(b => (b.imageUrl?.startsWith('data:image/png') ? b : { ...b, imageUrl: undefined }));
+  store('werka_last_date', today);
+  return { today, inventory, bouquets };
+};
 
 // Styled Start Menu Component
 const StartMenu: React.FC<{
@@ -65,7 +87,7 @@ const StartMenu: React.FC<{
         ) : (
           bouquets.slice(0, 5).map(b => (
             <div key={b.id} className="flex-shrink-0 w-14 h-14 sm:w-20 sm:h-20 bg-amber-100 p-1 rounded border border-amber-800/30 shadow-md hover:scale-110 transition-transform duration-200" title={b.date}>
-              <img src={b.imageUrl} alt="Bouquet" className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all" />
+              <img src={b.imageUrl ?? bouquetSvgUrl(b.flowers)} alt="Bouquet" style={{ imageRendering: 'pixelated' }} className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all" />
             </div>
           ))
         )}
@@ -109,64 +131,26 @@ const Intro: React.FC<{ date: string; onComplete: () => void }> = ({ date, onCom
 };
 
 const App: React.FC = () => {
+  const [init] = useState(loadSaved);
   const [gameState, setGameState] = useState<GameState>(GameState.START_MENU);
-  const [inventory, setInventory] = useState<Flower[]>([]);
-  const [bouquets, setBouquets] = useState<Bouquet[]>([]);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [currentDate, setCurrentDate] = useState<string>("");
-  const [currentDateString, setCurrentDateString] = useState<string>("");
-
-  useEffect(() => {
-    // Set current date on mount
-    const d = new Date();
-    const dateString = d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-    setCurrentDate(dateString);
-    setCurrentDateString(dateString);
-
-    // Load state from localStorage
-    const savedInventory = localStorage.getItem('werka_inventory');
-    const savedBouquets = localStorage.getItem('werka_bouquets');
-    const lastSavedDate = localStorage.getItem('werka_last_date');
-
-    if (savedInventory) {
-      if (lastSavedDate && lastSavedDate !== currentDateString) {
-        console.log("New day detected, resetting inventory.");
-        localStorage.removeItem('werka_inventory');
-        setInventory([]);
-      } else {
-        try {
-          setInventory(JSON.parse(savedInventory));
-        } catch (e) {
-          console.error("Failed to load inventory", e);
-        }
-      }
-    }
-
-    if (savedBouquets) {
-      try {
-        setBouquets(JSON.parse(savedBouquets));
-      } catch (e) {
-        console.error("Failed to load bouquets", e);
-      }
-    }
-
-    // Update last saved date
-    localStorage.setItem('werka_last_date', currentDateString);
-  }, [currentDateString]);
+  const [inventory, setInventory] = useState<Flower[]>(init.inventory);
+  const [bouquets, setBouquets] = useState<Bouquet[]>(init.bouquets);
+  const [currentDate, setCurrentDate] = useState<string>(init.today);
 
   // Save state whenever it changes
   useEffect(() => {
-    localStorage.setItem('werka_inventory', JSON.stringify(inventory));
+    store('werka_inventory', JSON.stringify(inventory));
   }, [inventory]);
 
   useEffect(() => {
-    localStorage.setItem('werka_bouquets', JSON.stringify(bouquets));
+    store('werka_bouquets', JSON.stringify(bouquets));
   }, [bouquets]);
 
   const handleResetProgress = () => {
     if (confirm("Are you sure you want to reset all progress? This cannot be undone.")) {
       localStorage.removeItem('werka_inventory');
       localStorage.removeItem('werka_bouquets');
+      localStorage.removeItem(SAVE_KEY);
       setInventory([]);
       setBouquets([]);
       alert("Progress reset.");
@@ -174,6 +158,7 @@ const App: React.FC = () => {
   };
 
   const handleStartGame = () => {
+    setCurrentDate(getToday());
     setGameState(GameState.INTRO);
   };
 
@@ -194,37 +179,27 @@ const App: React.FC = () => {
     setGameState(GameState.CRAFTING);
   };
 
-  const handleCraftBouquet = async (selectedTypes: FlowerType[]) => {
-    setIsGenerating(true);
-    try {
-      const imageUrl = await generateBouquetImage(selectedTypes);
+  const handleCraftBouquet = (selectedTypes: FlowerType[]) => {
+    const newBouquet: Bouquet = {
+      id: Date.now().toString(),
+      date: currentDate,
+      flowers: selectedTypes,
+      description: `A lovely arrangement of ${selectedTypes.join(', ')}.`
+    };
+    setBouquets(prev => [newBouquet, ...prev]);
+    // Pixel-art picture arrives later; the SVG shows until then (or forever if generation fails)
+    generateBouquetImage(selectedTypes, newBouquet.id).then(imageUrl => {
+      if (imageUrl) setBouquets(prev => prev.map(b => (b.id === newBouquet.id ? { ...b, imageUrl } : b)));
+    });
 
-      const newBouquet: Bouquet = {
-        id: Date.now().toString(),
-        date: currentDate,
-        flowers: selectedTypes,
-        imageUrl: imageUrl,
-        description: `A lovely arrangement of ${selectedTypes.join(', ')}.`
-      };
-
-      setBouquets(prev => [newBouquet, ...prev]);
-
-      // Clear crafted items from inventory
-      const newInventory = [...inventory];
-      selectedTypes.forEach(type => {
-        const idx = newInventory.findIndex(f => f.type === type);
-        if (idx !== -1) {
-          newInventory.splice(idx, 1);
-        }
-      });
-      setInventory(newInventory);
-      setGameState(GameState.GALLERY);
-    } catch (e) {
-      console.error(e);
-      alert("Failed to craft bouquet. Try again.");
-    } finally {
-      setIsGenerating(false);
-    }
+    // Clear crafted items from inventory
+    const newInventory = [...inventory];
+    selectedTypes.forEach(type => {
+      const idx = newInventory.findIndex(f => f.type === type);
+      if (idx !== -1) newInventory.splice(idx, 1);
+    });
+    setInventory(newInventory);
+    setGameState(GameState.GALLERY);
   };
 
   return (
@@ -261,7 +236,6 @@ const App: React.FC = () => {
               inventory={inventory}
               onCraft={handleCraftBouquet}
               onCancel={() => setGameState(GameState.INSIDE_HOUSE)}
-              isGenerating={isGenerating}
             />
           )}
 
@@ -274,7 +248,7 @@ const App: React.FC = () => {
         </div>
 
         <div className="mt-8 text-neutral-500 text-xs font-mono">
-          Powered by Google Gemini • React • Tailwind CSS
+          React • Tailwind CSS
         </div>
       </div>
     </div>

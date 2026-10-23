@@ -1,0 +1,157 @@
+:root {
+  --ink: #13262b;            /* deep teal ink for panels */
+  --ink-a: rgba(19, 38, 43, 0.74);
+  --cream: #fbf3dc;
+  --cream-2: #efe3c2;
+  --gold: #f1c76b;
+  --petal: #e58fa8;
+  --petal-d: #b4607a;
+  --moss: #2f3b2a;
+  --display: 'Caprasimo', Georgia, serif;
+  --body: 'Figtree', system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--ink); color: var(--cream); font-family: var(--body); -webkit-tap-highlight-color: transparent; }
+#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+#ui { position: fixed; inset: 0; pointer-events: none; user-select: none; -webkit-user-select: none; }
+#ui > * { pointer-events: auto; }
+#ui > .hud, #ui > .prompt, #ui > .toast, #ui > .fade { pointer-events: none; }
+[hidden] { display: none !important; }
+
+button { font: inherit; cursor: pointer; border: 0; color: inherit; }
+button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
+
+.btn {
+  background: var(--ink); color: var(--cream); padding: 13px 24px; border-radius: 999px;
+  font-weight: 800; font-size: 16px; box-shadow: 0 3px 0 #08151a, 0 8px 20px rgba(0, 0, 0, 0.25);
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+.btn:hover { background: #1d3940; }
+.btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #08151a; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+.btn.petal { background: var(--petal); color: var(--ink); box-shadow: 0 3px 0 var(--petal-d), 0 8px 20px rgba(0, 0, 0, 0.25); }
+.btn.petal:hover { background: #ee9db4; }
+.btn.ghost { background: rgba(251, 243, 220, 0.12); color: var(--cream); box-shadow: inset 0 0 0 2px rgba(251, 243, 220, 0.6); backdrop-filter: blur(6px); }
+.link { background: none; color: rgba(251, 243, 220, 0.7); text-decoration: underline; font-size: 13px; padding: 6px; }
+
+/* Title screen: big lettering over the living world, no card. */
+.menu {
+  position: fixed; inset: 0; display: grid; place-items: center; padding: 16px;
+  background: radial-gradient(90% 70% at 50% 45%, rgba(19, 38, 43, 0.05), rgba(19, 38, 43, 0.6));
+}
+.menu .title-block { text-align: center; }
+.menu h1 {
+  font-family: var(--display); font-weight: 400; font-size: clamp(56px, 15vw, 128px); line-height: 0.86; margin: 0 0 30px;
+  color: var(--cream); letter-spacing: 0.01em;
+  text-shadow: 0 3px 0 var(--petal-d), 0 6px 0 var(--ink), 0 18px 40px rgba(8, 21, 26, 0.55);
+}
+.menu .row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 10px; }
+.menu .hint { position: fixed; left: 0; right: 0; bottom: max(18px, env(safe-area-inset-bottom)); text-align: center; margin: 0; font-size: 14px; color: rgba(251, 243, 220, 0.8); text-shadow: 0 1px 6px rgba(0, 0, 0, 0.5); }
+
+/* Intro typing line */
+.intro { position: fixed; inset: 0; background: var(--ink); display: grid; place-items: center; padding: 24px; transition: opacity 0.6s ease; }
+.intro.out { opacity: 0; pointer-events: none; }
+.intro p { font-family: var(--display); font-size: clamp(24px, 4.6vw, 40px); line-height: 1.3; max-width: 22ch; text-align: center; margin: 0; color: var(--cream); }
+.intro .caret { display: inline-block; width: 0.08em; height: 0.9em; margin-right: -0.08em; background: var(--gold); margin-left: 4px; vertical-align: -0.12em; animation: blink 1s steps(1) infinite; }
+.intro .skip { position: absolute; bottom: max(22px, env(safe-area-inset-bottom)); font-size: 14px; color: rgba(251, 243, 220, 0.55); }
+@keyframes blink { 50% { opacity: 0; } }
+
+/* HUD: basket beads + time, on a soft ink plate. */
+.hud {
+  position: fixed; top: max(14px, env(safe-area-inset-top)); left: 14px; padding: 12px 14px 10px;
+  background: var(--ink-a); border-radius: 16px; backdrop-filter: blur(8px);
+  box-shadow: inset 0 0 0 1px rgba(241, 199, 107, 0.25), 0 10px 24px rgba(0, 0, 0, 0.25);
+}
+.dots { display: grid; grid-template-columns: repeat(6, 18px); gap: 6px; }
+.dot { width: 18px; height: 18px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px rgba(251, 243, 220, 0.28); }
+.dot.full { background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.7), transparent 45%), var(--c); box-shadow: 0 0 0 1.5px rgba(251, 243, 220, 0.85), 0 0 10px var(--c); }
+.dot.pop { animation: pop 0.45s cubic-bezier(0.3, 1.8, 0.5, 1); }
+@keyframes pop { 0% { transform: scale(0.2); } 100% { transform: scale(1); } }
+.hud .meta { display: flex; justify-content: space-between; align-items: center; margin-top: 9px; font-size: 13px; font-weight: 800; color: var(--cream-2); }
+.hud .time { display: inline-flex; align-items: center; gap: 6px; color: var(--gold); }
+.hud .time svg { width: 15px; height: 15px; }
+
+.mute {
+  position: fixed; top: max(14px, env(safe-area-inset-top)); right: 14px; width: 44px; height: 44px; border-radius: 50%;
+  background: var(--ink-a); color: var(--cream); display: grid; place-items: center; backdrop-filter: blur(8px);
+  box-shadow: inset 0 0 0 1px rgba(241, 199, 107, 0.25);
+}
+.mute svg { width: 20px; height: 20px; }
+
+.prompt {
+  position: fixed; left: 50%; bottom: max(30px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+  background: var(--ink-a); color: var(--cream); padding: 10px 18px 10px 10px; border-radius: 999px; font-weight: 700; white-space: nowrap;
+  backdrop-filter: blur(8px); box-shadow: inset 0 0 0 1px rgba(241, 199, 107, 0.3); animation: rise 0.18s ease-out;
+}
+.prompt kbd { display: inline-grid; place-items: center; width: 26px; height: 26px; background: var(--gold); color: var(--ink); border-radius: 8px; margin-right: 10px; font-family: var(--body); font-weight: 800; box-shadow: 0 2px 0 #b38a33; }
+@keyframes rise { from { opacity: 0; transform: translate(-50%, 6px); } }
+.toast {
+  position: fixed; top: max(18px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); background: var(--cream); color: var(--ink);
+  padding: 9px 18px; border-radius: 999px; font-weight: 800; box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
+}
+.toast.in { animation: drop 0.25s cubic-bezier(0.3, 1.6, 0.5, 1); }
+@keyframes drop { from { opacity: 0; transform: translate(-50%, -10px); } }
+.fade { position: fixed; inset: 0; background: #0b1619; opacity: 0; transition: opacity 0.45s ease; }
+.fade.on { opacity: 1; }
+
+/* Crafting */
+.panel { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(8, 21, 26, 0.5); }
+.panel .card { background: var(--cream); color: var(--ink); border-radius: 24px; padding: 24px; width: min(560px, 100%); max-height: calc(100vh - 32px); overflow: auto; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4); }
+.panel h2 { font-family: var(--display); font-weight: 400; margin: 0 0 4px; font-size: 32px; }
+.panel .sub { margin: 0 0 16px; color: #3d5358; }
+.grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px; }
+.slot { aspect-ratio: 1; border-radius: 16px; background: #fffaf0; display: grid; place-items: center; align-content: center; gap: 6px; padding: 6px; font-size: 11.5px; font-weight: 700; color: var(--ink); text-align: center; box-shadow: inset 0 0 0 1.5px rgba(19, 38, 43, 0.12); transition: transform 0.12s ease; }
+.slot .pic { width: 70%; aspect-ratio: 1; object-fit: contain; filter: drop-shadow(0 3px 3px rgba(19, 38, 43, 0.25)); }
+.slot .bloom { width: 44%; aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.7), transparent 45%), var(--c); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2); }
+.slot[aria-pressed='true'] { background: var(--gold); box-shadow: inset 0 0 0 3px var(--ink); transform: scale(1.03); }
+.slot.empty { background: transparent; box-shadow: none; border: 1.5px dashed rgba(19, 38, 43, 0.2); }
+.panel .row { display: flex; gap: 10px; justify-content: space-between; align-items: center; }
+.panel .btn.ghost { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); backdrop-filter: none; }
+.count { font-weight: 800; }
+
+/* Gallery: bouquet renders on the canvas, list sits on an ink plate. */
+.gallery { position: fixed; left: 14px; bottom: max(14px, env(safe-area-inset-bottom)); width: min(320px, calc(100% - 28px)); max-height: 46vh; display: flex; flex-direction: column; padding: 16px; background: var(--ink-a); border-radius: 18px; backdrop-filter: blur(8px); box-shadow: inset 0 0 0 1px rgba(241, 199, 107, 0.25); }
+.gallery h2 { font-family: var(--display); font-weight: 400; margin: 0 0 8px; font-size: 26px; color: var(--cream); }
+.gallery ul { list-style: none; margin: 0 0 12px; padding: 0; overflow: auto; }
+.gallery li button { width: 100%; text-align: left; background: none; padding: 8px; border-radius: 10px; display: grid; gap: 5px; }
+.gallery li button[aria-current='true'] { background: rgba(251, 243, 220, 0.12); box-shadow: inset 0 0 0 1.5px var(--gold); }
+.gallery .date { font-size: 13px; font-weight: 700; }
+.strip { display: flex; gap: 4px; flex-wrap: wrap; }
+.strip i { width: 12px; height: 12px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 1px rgba(251, 243, 220, 0.6); }
+.gallery .row { display: flex; gap: 8px; }
+.gallery .btn { background: var(--cream); color: var(--ink); box-shadow: 0 3px 0 #b9ab86; }
+.gallery .empty-note { color: var(--cream-2); margin: 0 0 12px; line-height: 1.45; }
+
+/* Home compass: a small ink chip near the top that points toward the cottage. */
+.compass { position: fixed; top: max(14px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 7px 14px 7px 8px; border-radius: 999px; background: var(--ink-a); color: var(--cream); font-weight: 700; font-size: 13px; backdrop-filter: blur(8px); box-shadow: inset 0 0 0 1px rgba(241, 199, 107, 0.25); pointer-events: none !important; }
+.compass .arrow { width: 22px; height: 22px; border-radius: 50%; background: var(--gold); position: relative; transition: transform 0.2s linear; }
+.compass .arrow::after { content: ''; position: absolute; left: 50%; top: 3px; margin-left: -5px; border: 5px solid transparent; border-bottom: 9px solid var(--ink); border-top: 0; }
+.menu .row.small { gap: 4px; margin: 0; }
+
+/* Tutorial card */
+.tutorial { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(8, 21, 26, 0.45); }
+.tutorial .card { background: var(--cream); color: var(--ink); border-radius: 24px; padding: 24px 26px; width: min(420px, 100%); box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4); }
+.tutorial h2 { font-family: var(--display); font-weight: 400; margin: 0 0 10px; font-size: 30px; }
+.tutorial ol { margin: 0 0 18px; padding-left: 22px; line-height: 1.55; }
+.tutorial li { margin-bottom: 6px; }
+
+/* Touch: floating joystick wherever the left thumb lands, big contextual button on the right. */
+.stick { position: fixed; left: 0; top: 0; width: 128px; height: 128px; margin: -64px 0 0 -64px; border-radius: 50%; background: rgba(251, 243, 220, 0.16); box-shadow: inset 0 0 0 2px rgba(251, 243, 220, 0.55); pointer-events: none !important; }
+.stick .knob { position: absolute; left: 39px; top: 39px; width: 50px; height: 50px; border-radius: 50%; background: var(--cream); box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3); }
+.act {
+  position: fixed; right: max(18px, env(safe-area-inset-right)); bottom: max(28px, env(safe-area-inset-bottom)); min-width: 112px; max-width: 46vw; height: 72px; padding: 0 22px; border-radius: 36px;
+  background: var(--petal); color: var(--ink); font-weight: 800; font-size: 16px; line-height: 1.1; box-shadow: 0 4px 0 var(--petal-d), 0 10px 24px rgba(0, 0, 0, 0.3); touch-action: none; animation: pulse 1.6s ease-in-out infinite;
+}
+.act:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--petal-d); }
+@keyframes pulse { 50% { box-shadow: 0 4px 0 var(--petal-d), 0 0 0 8px rgba(229, 143, 168, 0.25); } }
+
+@media (max-width: 560px) {
+  .grid { grid-template-columns: repeat(3, 1fr); }
+  .dots { grid-template-columns: repeat(6, 15px); gap: 5px; }
+  .dot { width: 15px; height: 15px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fade, .intro { transition: none; }
+  .act, .dot.pop, .toast.in, .prompt { animation: none; }
+}

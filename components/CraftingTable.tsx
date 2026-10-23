@@ -5,10 +5,9 @@ interface CraftingTableProps {
   inventory: Flower[];
   onCraft: (selectedFlowers: FlowerType[]) => void;
   onCancel: () => void;
-  isGenerating: boolean;
 }
 
-export const CraftingTable: React.FC<CraftingTableProps> = ({ inventory, onCraft, onCancel, isGenerating }) => {
+export const CraftingTable: React.FC<CraftingTableProps> = ({ inventory, onCraft, onCancel }) => {
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
 
   const toggleSelection = (index: number) => {
@@ -70,23 +69,20 @@ export const CraftingTable: React.FC<CraftingTableProps> = ({ inventory, onCraft
       <div className="flex gap-4 z-10">
         <button
           onClick={onCancel}
-          disabled={isGenerating}
           className="px-4 sm:px-8 py-2 sm:py-3 bg-stone-600 text-stone-200 rounded border-b-4 border-stone-800 hover:bg-stone-500 active:border-b-0 active:mt-1 font-bold pixel-text disabled:opacity-50 text-sm sm:text-base"
         >
           BACK
         </button>
         <button
           onClick={handleCraft}
-          disabled={selectedIndices.size === 0 || isGenerating}
+          disabled={selectedIndices.size === 0}
           className={`
             px-4 sm:px-8 py-2 sm:py-3 rounded border-b-4 font-bold pixel-text transition-all text-sm sm:text-base
-            ${isGenerating
-              ? 'bg-yellow-700 text-yellow-200 border-yellow-900 cursor-wait'
-              : 'bg-green-600 text-white border-green-800 hover:bg-green-500 active:border-b-0 active:mt-1'}
+            bg-green-600 text-white border-green-800 hover:bg-green-500 active:border-b-0 active:mt-1
             disabled:opacity-50 disabled:cursor-not-allowed
           `}
         >
-          {isGenerating ? 'DREAMING...' : 'CRAFT'}
+          CRAFT
         </button>
       </div>
     </div>

@@ -9,6 +9,9 @@ export class SoundManager {
         } catch (e) {
             console.error("Web Audio API not supported", e);
         }
+        // iOS only allows audio after a user gesture
+        const unlock = () => this.audioContext?.resume();
+        ['pointerdown', 'keydown', 'touchstart'].forEach(ev => window.addEventListener(ev, unlock, { once: true }));
     }
 
     public static getInstance(): SoundManager {

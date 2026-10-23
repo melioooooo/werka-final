@@ -4,7 +4,6 @@ export enum GameState {
   EXPLORING = 'EXPLORING',
   INSIDE_HOUSE = 'INSIDE_HOUSE',
   CRAFTING = 'CRAFTING',
-  GENERATING = 'GENERATING',
   GALLERY = 'GALLERY'
 }
 
@@ -124,6 +123,6 @@ export interface Bouquet {
   id: string;
   date: string;
   flowers: FlowerType[];
-  imageUrl: string;
+  imageUrl?: string; // generated pixel-art PNG; absent => SVG fallback
   description: string;
 }
