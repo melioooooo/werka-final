@@ -261,7 +261,9 @@ export function bakeColors(root: THREE.Object3D) {
     g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld));
     let key: string | THREE.Material = src;
     if (plain) {
-      const { color: _c, vertexColors: _v, ...rest } = opts!;
+      // No sway once baked: the merged geometry is in world space, so position.y would be the
+      // world height and a flag on a hill would swing tens of units.
+      const { color: _c, vertexColors: _v, sway: _s, ...rest } = opts!;
       key = JSON.stringify(rest);
       col.copy(src.color);
       const n = g.attributes.position.count, out = new Float32Array(n * 3);

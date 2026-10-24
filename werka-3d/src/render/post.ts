@@ -11,7 +11,7 @@ const Grade = {
     tDiffuse: { value: null },
     uShadow: { value: new THREE.Color('#4f9fb8') }, // teal shadows
     uHigh: { value: new THREE.Color('#ffe2b0') }, // warm highlights
-    uSat: { value: 1.12 },
+    uSat: { value: 1.0 },
     uVig: { value: 0.34 },
     uRays: { value: 0 }, // 0..1 soft sun shafts from the top-left, daytime only
     uTime: { value: 0 },
@@ -44,7 +44,9 @@ const Grade = {
       vec3 tint = mix(uShadow, uHigh, smoothstep(0.03, 0.55, l));
       c *= mix(vec3(1.0), tint, 0.42) * 1.08;
       c += uShadow * 0.035 * (1.0 - smoothstep(0.0, 0.25, l)); // lift crushed shadows toward teal
-      c = mix(c, c * c * (3.0 - 2.0 * min(c, vec3(1.0))), 0.35); // S-curve for value contrast
+      // S-curve on luminance only: value contrast without crushing the weak channels (per-channel went neon).
+      float lc = min(dot(c, vec3(0.2126, 0.7152, 0.0722)), 1.0);
+      c *= mix(1.0, lc * (3.0 - 2.0 * lc), 0.35);
       vec2 o = vUv - vec2(-0.15, 1.25);
       float ang = atan(o.y, o.x);
       float bands = 0.5 + 0.5 * sin(ang * 23.0 + sin(ang * 7.0 + uTime * 0.15) * 2.0);

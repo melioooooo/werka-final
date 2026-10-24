@@ -87,7 +87,7 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
 .prompt kbd { display: inline-grid; place-items: center; width: 26px; height: 26px; background: var(--gold); color: var(--ink); border-radius: 8px; margin-right: 10px; font-family: var(--body); font-weight: 800; box-shadow: 0 2px 0 #b38a33; }
 @keyframes rise { from { opacity: 0; transform: translate(-50%, 6px); } }
 .toast {
-  position: fixed; top: max(18px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); background: var(--cream); color: var(--ink);
+  position: fixed; top: max(64px, calc(env(safe-area-inset-top) + 50px)); left: 50%; width: max-content; max-width: calc(100vw - 32px); text-align: center; transform: translateX(-50%); background: var(--cream); color: var(--ink);
   padding: 9px 18px; border-radius: 999px; font-weight: 800; box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
 }
 .toast.in { animation: drop 0.25s cubic-bezier(0.3, 1.6, 0.5, 1); }
@@ -196,6 +196,7 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
   .pocket { gap: 6px; }
   .kisses { font-size: 13px; padding: 3px 7px 3px 5px; }
   .compass { left: auto; right: 68px; transform: none; }
+  .toast { top: max(170px, calc(env(safe-area-inset-top) + 156px)); } /* below the HUD card */
   .talk p { font-size: 17px; }
 }
 @media (max-height: 500px) {

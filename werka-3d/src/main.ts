@@ -30,7 +30,7 @@ let quality: Quality = stored ?? 'med';
 let probe = stored ? -1 : 0, probeSum = 0; // frames measured so far (-1 = done)
 let PR = 1;
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.toneMapping = THREE.NeutralToneMapping;
 renderer.toneMappingExposure = 1.05;
 
@@ -55,8 +55,8 @@ const resize = () => {
   renderer.setSize(w, h, false);
   post.setSize(w, h, PR);
   camera.aspect = galleryView.camera.aspect = w / h;
-  // Portrait phones see less width: widen a little so the play area stays similar.
-  camera.fov = w < h ? CAM.fov * 1.1 : CAM.fov;
+  // Phones: a slightly longer lens so Werka and Elio stay readable on small screens.
+  camera.fov = w < h ? CAM.fov * 0.9 : h < 500 ? CAM.fov * 0.72 : CAM.fov;
   galleryView.camera.position.set(0, 1.2, w < h ? 8.8 : 5.2);
   galleryView.camera.lookAt(0, 0.2, 0);
   camera.updateProjectionMatrix();
@@ -260,7 +260,7 @@ function talkToElio() {
   const lines = gave ? ['See you tomorrow, somewhere else!'] : ['Ahah! You found me!', world.elio.line, 'Here, this is for you.'];
   ui.dialogue('Elio', lines, () => sfx.blip(), () => {
     consumeAction(); // the key that closed the box must not reopen it
-    talkAgain = clock.elapsedTime + 0.8;
+    talkAgain = clock.getElapsed() + 0.8;
     mode = 'outdoor';
     ui.setPlaying(true);
     if (!gave) {
@@ -385,11 +385,12 @@ function tickHouse(dt: number, time: number) {
   interiorCamera(camera, camTarget);
 }
 
-const clock = new THREE.Clock();
+const clock = new THREE.Timer();
 const tmpGold = new THREE.Color('#ffb070');
-renderer.setAnimationLoop(() => {
+renderer.setAnimationLoop(now => {
+  clock.update(now);
   const dt = Math.min(clock.getDelta(), 0.05);
-  const time = clock.elapsedTime;
+  const time = clock.getElapsed();
   U.uTime.value = time;
   post.grade.uniforms.uTime.value = time;
   const outside = mode === 'outdoor' || mode === 'talk' || mode === 'menu';
@@ -453,7 +454,7 @@ if (import.meta.env.DEV) {
   Object.assign(window, {
     __werka: {
       get mode() { return mode; },
-      pos, world, state,
+      pos, world, state, camera, scene: outdoor.scene,
       teleport: (x: number, z: number) => { pos.x = x; pos.z = z; camTarget.set(x, pos.y, z); },
       // Stand just in front of (camera side of) Elio, or next to a pickup by id.
       toElio: () => { const e = world.elio; pos.set(e.ox, walkY(world, e.ox, e.oz + 2), e.oz + 2); camTarget.copy(pos); },

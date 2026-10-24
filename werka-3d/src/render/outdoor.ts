@@ -15,6 +15,7 @@ import { flowerGeometry } from './flowers.ts';
 const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), sc = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
 const tmpC = new THREE.Color(), tmpB = new THREE.Color();
+const ZERO = new THREE.Vector3(), sunOff = new THREE.Vector3(), snapV = new THREE.Vector3(), snapM = new THREE.Matrix4(), snapQ = new THREE.Quaternion();
 
 const place = (mesh: THREE.InstancedMesh, i: number, x: number, y: number, z: number, sx: number, sy: number, sz: number, rotY = 0) => {
   q.setFromAxisAngle(UP, rotY);
@@ -56,8 +57,8 @@ const pathStart = { x: HOUSE.door.x, z: HOUSE.door.z + 0.8 };
 
 // Curated ground palette (the 2D BIOME_COLORS are too neon under real lighting).
 const GROUND: Record<Biome, string> = {
-  GRASS: '#3e9d45', FOREST: '#23824d', MEADOW: '#77b93c', DESERT: '#e9bd78', RIVER: '#3c9c4a',
-  TROPICAL: '#18a07c', MOUNTAIN: '#6f9a55', SWAMP: '#3e7045', TUNDRA: '#dcedf3', ENCHANTED: '#5b86a6',
+  GRASS: '#5e9a4f', FOREST: '#3d7f55', MEADOW: '#8aac4c', DESERT: '#e9bd78', RIVER: '#5a9a55',
+  TROPICAL: '#3a9a7a', MOUNTAIN: '#73945c', SWAMP: '#4d6e4a', TUNDRA: '#dcedf3', ENCHANTED: '#5b86a6',
 };
 // Per-biome mist: fog tint so each region has its own air.
 const MIST: Record<Biome, string> = {
@@ -67,7 +68,7 @@ const MIST: Record<Biome, string> = {
 // Large soft patches, -1..1, so meadows read painted rather than flat.
 const patch = (x: number, z: number) =>
   (Math.sin(x * 0.11 + Math.sin(z * 0.07) * 2) * Math.cos(z * 0.09 + Math.sin(x * 0.05)) + Math.sin(x * 0.31 + z * 0.27) * 0.35) / 1.35;
-const warm = new THREE.Color('#c9df4e'), cool = new THREE.Color('#145f63');
+const warm = new THREE.Color('#bcc463'), cool = new THREE.Color('#2f6a66');
 const groundColor = (w: World, x: number, z: number, out: THREE.Color) => {
   out.setRGB(0, 0, 0);
   for (const [b, k] of biomeWeights(w, x, z)) if (k > 0) out.add(tmpB.set(GROUND[b]).multiplyScalar(k));
@@ -79,7 +80,7 @@ const groundColor = (w: World, x: number, z: number, out: THREE.Color) => {
 // Smooth normals per blob so the toon ramp paints soft bands instead of noisy facets.
 const crownGeo = () => gradient(mergeGeometries([
   [0, 0, 0, 1], [0.6, 0.3, 0.25, 0.72], [-0.55, 0.22, -0.3, 0.68], [0.05, 0.62, -0.05, 0.6],
-].map(([x, y, z, r]) => new THREE.IcosahedronGeometry(r, 1).translate(x, y, z).toNonIndexed()))!, 0.55, 1.2, false);
+].map(([x, y, z, r]) => new THREE.IcosahedronGeometry(r, 1).translate(x, y, z)))!, 0.55, 1.2, false);
 
 // Past the playable square the land keeps going under the mist and swells into soft hills
 // (river valley kept open), so the high camera never finds a hard edge.
@@ -94,7 +95,7 @@ const landHeight = (w: World, x: number, z: number) => {
 };
 
 const sand = new THREE.Color('#e3cf98'), snow = new THREE.Color('#f4f7fb'), dirt = new THREE.Color('#c9a46a');
-const cliff = new THREE.Color('#a08f7c'), cliffDark = new THREE.Color('#5f5650'), lip = new THREE.Color('#9fd16a');
+const cliff = new THREE.Color('#a08f7c'), cliffDark = new THREE.Color('#5f5650'), lip = new THREE.Color('#a9c66e');
 function landColor(w: World, x: number, z: number, h: number, out: THREE.Color) {
   groundColor(w, x, z, out);
   const gx = landHeight(w, x + 0.5, z) - landHeight(w, x - 0.5, z), gz = landHeight(w, x, z + 0.5) - landHeight(w, x, z - 0.5);
@@ -104,6 +105,11 @@ function landColor(w: World, x: number, z: number, h: number, out: THREE.Color) 
   // Sunlit grass lip right above a drop, then a rock face that darkens toward its foot.
   const above = landHeight(w, x, z - 1.2) - h;
   if (slope < 0.9 && h - landHeight(w, x, z + 1.4) > 0.9) out.lerp(lip, 0.35);
+  // Soft shade at the foot of a drop (cool, like the cliff's own shadow), so ledges read as cliffs.
+  if (slope < 0.9) {
+    const foot = above > 0.9 ? 1 : landHeight(w, x, z - 2.4) - h > 0.9 ? 0.5 : 0;
+    if (foot) out.lerp(tmpB.copy(out).multiplyScalar(0.62).lerp(cool, 0.25), foot * 0.7);
+  }
   if (slope > 1.0) {
     const k = Math.min(1, (slope - 1.0) * 2.5);
     const strata = 0.9 + 0.12 * Math.sin(h * 5.5 + Math.sin(x * 0.7) * 0.8);
@@ -268,8 +274,8 @@ function house() {
   add(new THREE.BoxGeometry(W + 0.05, 0.18, 0.12), '#6b4a2e', 0, 2.0, front + 0.02); // mid rail
 
   // Pitched roof: staggered courses of clay tiles, each tipped so its lower lip catches the light.
-  const pitch = 0.62, ridgeY = 7.3, slope = front + 1.6, rows = 7, tileW = 0.86;
-  const tile = new THREE.BoxGeometry(tileW - 0.05, 0.13, slope / rows + 0.32);
+  const pitch = 0.5, ridgeY = 7.3, slope = front + 1.6, rows = 7, tileW = 0.86; // shallow enough that the high camera sees the back slope
+  const tileL = slope / rows + 0.32, tile = new THREE.BoxGeometry(tileW - 0.05, 0.13, tileL);
   const roofRng = new SeededRandom('roof');
   const roofMat = toon({ vertexColors: true, occlude: true, cut: true });
   const tileGeos: THREE.BufferGeometry[] = [];
@@ -285,10 +291,14 @@ function house() {
         .multiply(new THREE.Matrix4().makeTranslation(x, 0.08 - r * 0.012, sd * along))
         .multiply(new THREE.Matrix4().makeRotationX(sd * -0.11))
         .multiply(new THREE.Matrix4().makeRotationZ(roofRng.range(-0.025, 0.025)));
-      const g = tile.clone().toNonIndexed().applyMatrix4(m);
-      tc.copy(base).offsetHSL(roofRng.range(-0.006, 0.006), roofRng.range(-0.03, 0.02), roofRng.range(-0.022, 0.022) - r * 0.004);
+      const g = tile.clone().toNonIndexed();
+      const lz = g.attributes.position.array.filter((_, i) => i % 3 === 2).map(z => sd * z / tileL + 0.5); // 0 tucked under, 1 at the lip
+      g.applyMatrix4(m);
+      // Baked light so the pitch reads from straight above: the back slope sits in shade, eaves darken.
+      tc.copy(base).offsetHSL(roofRng.range(-0.006, 0.006), roofRng.range(-0.03, 0.02), roofRng.range(-0.022, 0.022))
+        .multiplyScalar((sd > 0 ? 1.12 : 0.7) * (1.1 - r * 0.055));
       const cols = new Float32Array(g.attributes.position.count * 3);
-      for (let i = 0; i < cols.length; i += 3) tc.toArray(cols, i);
+      for (let i = 0; i < cols.length; i += 3) tmpB.copy(tc).multiplyScalar(0.72 + 0.4 * lz[i / 3]).toArray(cols, i);
       g.setAttribute('color', new THREE.BufferAttribute(cols, 3));
       g.deleteAttribute('uv');
       tileGeos.push(g);
@@ -309,7 +319,7 @@ function house() {
       verge.rotation.x = sd * pitch;
     }
   }
-  add(new THREE.CylinderGeometry(0.26, 0.26, W + 1.9, 8, 1, false, 0, Math.PI).rotateZ(Math.PI / 2), '#8f3b2a', 0, ridgeY + 0.12, 0);
+  add(new THREE.CylinderGeometry(0.34, 0.34, W + 1.9, 8, 1, false, 0, Math.PI).rotateZ(Math.PI / 2), '#c7735a', 0, ridgeY + 0.14, 0);
   const gable = new THREE.Shape([new THREE.Vector2(-front, 0), new THREE.Vector2(front, 0), new THREE.Vector2(0, ridgeY - 4.3)]);
   for (const x of [-W / 2, W / 2]) {
     const gm = add(new THREE.ExtrudeGeometry(gable, { depth: 0.2, bevelEnabled: false }), '#e8d6b0', x - 0.1, 4.3, 0);
@@ -470,7 +480,7 @@ function grass(w: World, rng: SeededRandom) {
     if (slope > 0.5) continue; // no grass on cliff faces
     clumpX = x; clumpZ = z;
     const s = rng.range(0.7, 1.35);
-    list.push(inst(x, h, z, s, s * rng.range(0.8, 1.5), s, rng.range(0, 6), groundColor(w, x, z, tmpC).offsetHSL(rng.range(-0.015, 0.02), 0.04, rng.range(-0.06, 0.05))));
+    list.push(inst(x, h, z, s, s * rng.range(0.8, 1.5), s, rng.range(0, 6), groundColor(w, x, z, tmpC).offsetHSL(rng.range(-0.015, 0.02), 0, rng.range(-0.05, 0.06))));
     n++;
   }
   return chunked(geo, toon({ vertexColors: true, sway: 0.9, rim: 0.2, side: THREE.DoubleSide }), list);
@@ -554,7 +564,7 @@ function bushes(w: World, rng: SeededRandom) {
     n++;
   }
   const bushGeo = gradient(mergeGeometries([[0, 0, 0, 1], [0.55, 0.15, 0.2, 0.7], [-0.5, 0.1, -0.25, 0.65]]
-    .map(([x, y, z, r]) => new THREE.IcosahedronGeometry(r, 1).translate(x, y, z).toNonIndexed()))!, 0.55, 1.2, false);
+    .map(([x, y, z, r]) => new THREE.IcosahedronGeometry(r, 1).translate(x, y, z)))!, 0.55, 1.2, false);
   return chunked(bushGeo, toon({ vertexColors: true, sway: 0.04, occlude: true, rim: 0.45 }), list, true);
 }
 
@@ -778,12 +788,18 @@ export function buildOutdoor(w: World) {
     cloud = 0.9 * day;
     const dir = elev > -0.05 ? 1 : -1;
     // Keep the sun low-ish and to the side so shadows are long and readable from above.
-    sun.position.set(focus.x + Math.cos(ang) * 40 * dir - 14, focus.y + 30 + Math.abs(elev) * 30, focus.z + 26);
-    sun.target.position.copy(focus);
+    // Snap the shadow camera to whole shadow-map texels (in light space) so shadows don't shimmer as Werka walks.
+    sunOff.set(Math.cos(ang) * 40 * dir - 14, 30 + Math.abs(elev) * 30, 26);
+    snapQ.setFromRotationMatrix(snapM.lookAt(sunOff, ZERO, UP)).invert();
+    const texel = (sun.shadow.camera.right - sun.shadow.camera.left) / sun.shadow.mapSize.x;
+    snapV.copy(focus).applyQuaternion(snapQ);
+    snapV.set(Math.round(snapV.x / texel) * texel, Math.round(snapV.y / texel) * texel, snapV.z).applyQuaternion(snapQ.invert());
+    sun.target.position.copy(snapV);
+    sun.position.copy(snapV).add(sunOff);
     if (day > 0) sun.color.set('#ff8a4a').lerp(tmpB.set('#fff0d0'), Math.min(1, Math.max(0, elev * 2.4)));
     else sun.color.set('#8fa6ff');
-    sun.intensity = day > 0 ? 0.9 + 1.6 * day + golden * 0.6 : 0.55;
-    hemi.intensity = 0.55 + 0.75 * day + golden * 0.35;
+    sun.intensity = day > 0 ? 0.9 + 1.6 * day + golden * 0.6 : 0.8;
+    hemi.intensity = 0.75 + 0.55 * day + golden * 0.35; // moonlit nights stay readable
     hemi.color.set('#9cc8ff').lerp(tmpB.set('#ffb98a'), golden * 0.55).lerp(tmpB.set('#5a6aa8'), 1 - day);
     hemi.groundColor.set(day > 0.3 ? '#2f5f78' : '#1a2140');
     glass.emissiveIntensity = 1.6 * (1 - day) + golden * 0.6;

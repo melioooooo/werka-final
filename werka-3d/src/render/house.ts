@@ -33,7 +33,7 @@ export function interiorBlocked(x: number, z: number, r = 0.45) {
 const PITCH = THREE.MathUtils.degToRad(50);
 export function interiorCamera(cam: THREE.PerspectiveCamera, target: THREE.Vector3) {
   const tv = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
-  const fitW = cam.aspect < 1 ? 11 : 15.5;
+  const fitW = cam.aspect < 1 ? 9.5 : 15.5;
   const dist = Math.max(14.2 / (2 * tv), fitW / (2 * tv * cam.aspect));
   const pan = Math.max(0, (14.8 - 2 * dist * tv * cam.aspect) / 2);
   const x = THREE.MathUtils.clamp(target.x * 0.8, -pan, pan) + target.x * 0.05;
@@ -122,6 +122,7 @@ function rebuildTreasures() {
     const t = new THREE.Group();
     TRINKETS[id](adder(t), t);
     t.position.set(SHELF.x + SHELF.cols[i % 4], SHELF.rows[Math.floor(i / 4)] + 0.06, SHELF.z + 0.05);
+    t.scale.setScalar(1.4); // read from the high camera on a phone
     g.add(t);
   });
   // Kiss jar: one little heart per kiss (up to 14), plus the counter plaque.
@@ -375,8 +376,8 @@ function buildStatic() {
   for (const y of SHELF.rows) a(Box(3.3, 0.07, 0.5), DR, DX, y, -4.95);
   a(Box(3.6, 0.16, 0.6), DR, DX, 4.18, -4.93);
   a(Box(3.7, 0.08, 0.66), WOOD, DX, 4.29, -4.92);
-  for (const y of SHELF.rows) for (const c of SHELF.cols) a(Cyl(0.17, 0.19, 0.06, 10), '#9b3d63', DX + c, y + 0.065, SHELF.z + 0.05);
-  a(Cyl(0.24, 0.26, 0.06, 12), '#9b3d63', DX, 4.36, SHELF.z + 0.12);
+  for (const y of SHELF.rows) for (const c of SHELF.cols) a(Cyl(0.2, 0.22, 0.05, 10), '#d8b08a', DX + c, y + 0.06, SHELF.z + 0.05);
+  a(Cyl(0.26, 0.28, 0.06, 12), '#d8b08a', DX, 4.36, SHELF.z + 0.12);
   // Bunting along the top of the dresser.
   for (let i = 0; i < 7; i++) a(new THREE.ConeGeometry(0.11, 0.2, 3).rotateX(Math.PI), ['#f472b6', '#facc15', '#8fb08a', '#7fa3c8'][i % 4], DX - 1.45 + i * 0.48, 3.98, -4.62);
   // Jar for the kisses (glass) and its cork, plaque next to it.
@@ -572,9 +573,9 @@ export function buildInterior() {
   p.width = 256; p.height = 140;
   plaque = { ctx: p.getContext('2d')!, tex: new THREE.CanvasTexture(p) };
   plaque.tex.colorSpace = THREE.SRGBColorSpace;
-  const sign = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.34), toon({ map: plaque.tex, rim: 0.1 }));
-  sign.position.set(4.35, 1.3, -4.45);
-  sign.rotation.x = -0.18;
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 0.55), toon({ map: plaque.tex, rim: 0.1 }));
+  sign.position.set(4.75, 1.3, -4.45);
+  sign.rotation.x = -0.6; // leant back so the high camera reads it
   scene.add(sign);
   rebuildTreasures();
 
@@ -590,9 +591,9 @@ export function buildInterior() {
     flameA.scale.set(1, fl, 1);
     flameB.scale.set(1, 1.6 - fl * 0.7, 1);
     flameC.scale.set(1, 0.7 + Math.sin(time * 9.1) * 0.25, 1);
-    fireLight.intensity = (10 + 10 * n) * fl;
+    fireLight.intensity = (6 + 8 * n) * fl;
     tableLight.intensity = 6 + 10 * n;
-    readLight.intensity = 4 + 10 * n;
+    readLight.intensity = 3 + 6 * n;
     paneMat.color.copy(C.paneNight).lerp(C.paneDay, day);
     shaftMat.color.copy(C.moon).lerp(C.sun, day);
     shaftMat.opacity = 0.12 + 0.45 * day;

@@ -117,7 +117,7 @@ function arch() {
 }
 
 const crown = () => gradient(mergeGeometries([[0, 0, 0, 1], [0.6, 0.3, 0.25, 0.72], [-0.55, 0.22, -0.3, 0.68], [0.05, 0.62, -0.05, 0.6]]
-  .map(([x, y, z, r]) => new THREE.IcosahedronGeometry(r, 1).translate(x, y, z).toNonIndexed()))!, 0.55, 1.2, false);
+  .map(([x, y, z, r]) => new THREE.IcosahedronGeometry(r, 1).translate(x, y, z)))!, 0.55, 1.2, false);
 
 // One recognisable silhouette per biome.
 const LANDMARK: Record<string, () => { g: THREE.Group; spin?: THREE.Object3D }> = {
@@ -322,7 +322,7 @@ export function decorInstances(w: World, rng: SeededRandom, near: (x: number, z:
     return mergeGeometries([paint(stem, '#f3ead8'), paint(cap, '#d9463b')])!;
   })();
   const mossyGeo = (() => {
-    const rock = new THREE.DodecahedronGeometry(1, 0).toNonIndexed();
+    const rock = new THREE.DodecahedronGeometry(1, 0);
     const cols = new Float32Array(rock.attributes.position.count * 3);
     const a = new THREE.Color(STONE), b = new THREE.Color(MOSS);
     for (let i = 0; i < rock.attributes.position.count; i++) (rock.attributes.position.getY(i) > 0.35 ? b : a).toArray(cols, i * 3);

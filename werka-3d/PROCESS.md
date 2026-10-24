@@ -79,3 +79,25 @@ Choix automatique sur l'écran titre d'après le temps de frame moyen mesuré en
 - **Perf** : mesurer sur appareil, fusionner les décors proches, réduire les ombres sur mobile, tester `high` seulement sur desktop.
 - **Gameplay** : kisses et trinkets une fois la spec donnée, bouton de bascule 2D ↔ 3D avec une page commune.
 - **Qualité du code** : découper `outdoor.ts` (709 lignes) en terrain / eau / végétation.
+
+## 9. v3 (branche `v3`)
+Spec commune 2D/3D : `docs/v3-spec.md`.
+- **Gameplay** : trinkets (11 types) et kisses placés chaque jour sur un flux RNG séparé (fleurs et arbres d'une date inchangés), poche de 8 places, compteur de kisses à vie. Modèles dans `src/render/pickups.ts`.
+- **Elio** (`src/render/elio.ts`) : caché derrière un arbre, un rocher ou un repère à plus de 72 unités du spawn, il jette un œil puis sort quand Werka approche. Dialogue en machine à écrire, Golden Kiss une fois par jour (+3 kisses).
+- **Bouquets** : jusqu'à 2 keepsakes (`extras`) attachés sur l'emballage.
+- **Course** : Shift ou joystick poussé au bord, 1.7×, dehors seulement.
+- **Bord de carte** : ralentissement doux puis arrêt à 4 unités du bord. Le terrain continue sur 64 unités et se dissout dans une brume qui suit l'heure et le biome (`toon.ts`, `MIST_GLSL`).
+- **Maison** : intérieur refait (`house.ts`, `house-kit.ts`), étagère à trésors via `setHouseTreasures`, environ 70 draw calls à l'intérieur.
+- **Rendu** :
+  - toit en pente avec ombrage cuit, falaises et rochers retravaillés, ombres de nuages ;
+  - palette adoucie (courbe en S sur la luminance seulement) ;
+  - ombres calées sur les texels ;
+  - caméra plus proche sur téléphone.
+- **Perf** : environ 125 draw calls près de la maison (contre environ 300 avant). `bakeColors` fusionne les groupes statiques.
+- **Tests** : `npm run check` couvre 60 dates (placement et déterminisme des trinkets, kisses et Elio).
+
+**Restes** :
+- terrasses de montagne encore lisibles comme des courbes de niveau ;
+- Low sans étalonnage couleur ;
+- désert, prairie et toundra de nuit non capturés ;
+- FPS sur vrai appareil non mesurés.
