@@ -1,21 +1,24 @@
 // Game loop and state machine: menu -> intro -> outdoor <-> house -> craft -> gallery.
 import * as THREE from 'three';
-import { generateWorld, blocked, steep, walkY, SPAWN, HOUSE } from './world/generate.ts';
-import { DAY_CYCLE_DURATION, MAX_INVENTORY, START_TIME, timeLabel } from './world/data.ts';
-import { state, load, save, today } from './state.ts';
+import { generateWorld, blocked, steep, walkY, SPAWN, HOUSE, HALF, EDGE } from './world/generate.ts';
+import { DAY_CYCLE_DURATION, MAX_INVENTORY, MAX_POCKET, POCKET_INFO, START_TIME, timeLabel } from './world/data.ts';
+import { state, load, save, today, type Bouquet } from './state.ts';
 import { buildOutdoor } from './render/outdoor.ts';
 import { buildPlayer } from './render/player.ts';
-import { buildInterior, buildGallery, interiorBlocked, TABLE, EXIT } from './render/house.ts';
+import { buildInterior, buildGallery, interiorBlocked, interiorCamera, setHouseTreasures, TABLE, EXIT } from './render/house.ts';
+import { buildPickups, heartBurst, pickupGeometry } from './render/pickups.ts';
+import { buildElio } from './render/elio.ts';
+import { buildBouquet } from './render/bouquet.ts';
 import { flowerGeometry } from './render/flowers.ts';
 import { buildPost } from './render/post.ts';
-import { flowerIcon } from './render/icons.ts';
+import { flowerIcon, pickupIcon } from './render/icons.ts';
 import { PRESETS, savedQuality, saveQuality, pickQuality, nextQuality, type Quality } from './quality.ts';
 import { U } from './render/toon.ts';
-import { initInput, readMove, consumeAction } from './input/input.ts';
+import { initInput, readMove, consumeAction, running, input } from './input/input.ts';
 import { startAudio, ambience, sfx, isMuted, toggleMute } from './audio.ts';
 import * as ui from './ui/ui.ts';
 
-type Mode = 'menu' | 'intro' | 'outdoor' | 'house' | 'craft' | 'gallery';
+type Mode = 'menu' | 'intro' | 'outdoor' | 'talk' | 'house' | 'craft' | 'gallery';
 
 load();
 const world = generateWorld(state.date);
@@ -40,7 +43,12 @@ const interior = buildInterior();
 const galleryView = buildGallery();
 const player = buildPlayer();
 outdoor.scene.add(player.root, player.dust);
-for (const id of state.picked) outdoor.hideFlower(id);
+// Trinkets, kisses and Elio (ids 't:'/'k:' share the picked set with flowers).
+const pickups = buildPickups([...world.trinkets, ...world.kisses], (x, z) => walkY(world, x, z));
+const elio = buildElio(world.elio);
+const hearts = heartBurst(outdoor.scene);
+outdoor.scene.add(pickups.group, elio.root);
+for (const id of state.picked) { outdoor.hideFlower(id); pickups.hide(id); }
 
 const resize = () => {
   const w = innerWidth, h = innerHeight;
@@ -62,7 +70,7 @@ function applyQuality(q: Quality) {
   quality = q;
   PR = Math.min(devicePixelRatio, p.pr);
   renderer.setPixelRatio(PR);
-  post.setEnabled(p.post);
+  post.setEnabled(p.post, p.bloom);
   outdoor.setQuality(p.shadow, p.grass);
   (outdoor.particles.material as THREE.ShaderMaterial).uniforms.uPx.value = PR;
   resize();
@@ -82,11 +90,25 @@ let facing = 0;
 let galleryReturn: Mode = 'menu';
 let stepClock = 0;
 
-const playing = () => mode === 'outdoor' || mode === 'house';
+const playing = () => mode === 'outdoor' || mode === 'house' || mode === 'talk';
+const pocketCount = () => state.pocket.filter(i => i !== 'golden_kiss').length;
+// House shelf: today's pocket + keepsakes tied on bouquets, and the lifetime kiss count.
+let treasureKey = '';
+const showTreasures = () => {
+  const items = [...state.pocket, ...state.bouquets.flatMap(b => b.extras ?? [])];
+  const key = `${items.join()}|${state.kissesTotal}`;
+  if (key === treasureKey) return;
+  treasureKey = key;
+  // Never let the shelf break a door transition.
+  try { setHouseTreasures(items, state.kissesTotal); }
+  catch (e) { console.error('setHouseTreasures failed', e); }
+};
 const refreshBasket = () => {
   player.setBasket(state.inventory.map(i => i.color));
   ui.setHud(playing() ? state.inventory : null);
+  ui.setPocket(state.pocket, state.kissesTotal, pickupIcon);
   ui.setTime(timeLabel(dayT));
+  showTreasures();
 };
 
 function goMenu() {
@@ -143,11 +165,13 @@ function enterHouse() {
 function openCraft() {
   mode = 'craft';
   ui.setAction(null); ui.setPlaying(false);
-  ui.craft(state.inventory, flowerIcon, picked => {
+  ui.craft(state.inventory, state.pocket, flowerIcon, pickupIcon, (picked, extras) => {
     const items = picked.map(i => state.inventory[i]);
-    const b = { id: Date.now().toString(), date: state.date, flowers: items.map(i => i.type), colors: items.map(i => i.color) };
+    const b: Bouquet = { id: Date.now().toString(), date: state.date, flowers: items.map(i => i.type), colors: items.map(i => i.color) };
+    if (extras.length) b.extras = extras.map(i => state.pocket[i]);
     state.bouquets.unshift(b);
     state.inventory = state.inventory.filter((_, i) => !picked.includes(i));
+    state.pocket = state.pocket.filter((_, i) => !extras.includes(i));
     save();
     refreshBasket();
     sfx.craft();
@@ -159,8 +183,17 @@ function openGallery(back: Mode) {
   galleryReturn = back;
   mode = 'gallery';
   ui.setHud(null); ui.setAction(null); ui.setPlaying(false);
-  ui.gallery(state.bouquets, b => galleryView.show(b ? b.flowers : null), () =>
+  ui.gallery(state.bouquets, pickupIcon, showBouquet, () =>
     ui.fade(() => (galleryReturn === 'house' ? enterHouse() : goMenu())));
+}
+
+// Gallery bouquet built here so keepsakes show (the gallery scene itself lives in house.ts).
+let shown: THREE.Group | null = null;
+function showBouquet(b: Bouquet | null) {
+  galleryView.show(null);
+  if (shown) galleryView.scene.remove(shown);
+  shown = b ? buildBouquet(b.flowers, b.extras) : null;
+  if (shown) { shown.position.y = -0.3; galleryView.scene.add(shown); }
 }
 
 const run = (action: () => void) => {
@@ -169,10 +202,24 @@ const run = (action: () => void) => {
   ui.fade(action).then(() => (busy = false));
 };
 
+// Soft map edge: an outward step shrinks smoothly to nothing between EDGE.slow and EDGE.stop from the border.
+let mistToast = -99;
+function edgeStep(v: number, d: number, time: number) {
+  if (Math.abs(v + d) <= Math.abs(v)) return d;
+  const k = Math.min(1, Math.max(0, (HALF - Math.abs(v) - EDGE.stop) / (EDGE.slow - EDGE.stop)));
+  if (k < 0.35 && time - mistToast > 8) { mistToast = time; ui.toast('The mist is too thick to go further.', 2400); }
+  return d * k * k * (3 - 2 * k);
+}
+
 // Screen-relative movement (camera looks toward -z), sliding along obstacles.
-function walk(dt: number, isBlocked: (x: number, z: number) => boolean, speed: number, time: number) {
+function walk(dt: number, isBlocked: (x: number, z: number) => boolean, speed: number, time: number, edge = false) {
   const m = readMove();
-  const dx = m.x * speed * dt, dz = -m.y * speed * dt;
+  const fast = edge && running(); // run outdoors only, the cottage is too small
+  if (fast) speed *= 1.7;
+  let dx = m.x * speed * dt, dz = -m.y * speed * dt;
+  const full = Math.hypot(dx, dz);
+  if (edge) { dx = edgeStep(pos.x, dx, time); dz = edgeStep(pos.z, dz, time); }
+  const slowed = full > 0 ? Math.hypot(dx, dz) / full : 1; // < 1 in the mist
   if (dx && !isBlocked(pos.x + dx, pos.z)) pos.x += dx;
   if (dz && !isBlocked(pos.x, pos.z + dz)) pos.z += dz;
   const moving = Math.hypot(m.x, m.y);
@@ -180,34 +227,80 @@ function walk(dt: number, isBlocked: (x: number, z: number) => boolean, speed: n
     let d = Math.atan2(dx, dz) - facing;
     d = Math.atan2(Math.sin(d), Math.cos(d));
     facing += d * Math.min(1, dt * 12);
-    stepClock += dt * moving;
-    if (stepClock > 0.3) { stepClock = 0; sfx.step(); if (mode === 'outdoor') player.puff(pos); }
+    stepClock += dt * moving * (fast ? 1.5 : 1);
+    if (stepClock > 0.3) { stepClock = 0; sfx.step(); if (mode === 'outdoor') player.puff(pos, fast ? 4 : 2); }
   }
-  player.animate(dt, moving * speed, time);
+  player.animate(dt, moving * speed * slowed, time);
   player.root.rotation.y = facing;
   return moving;
 }
 
 const DOOR = { x: HOUSE.door.x, z: HOUSE.door.z + 0.8 };
-const outdoorBlocked = (x: number, z: number) => blocked(world, x, z) || steep(world, pos.x, pos.z, x, z);
+const outdoorBlocked = (x: number, z: number) =>
+  blocked(world, x, z) || steep(world, pos.x, pos.z, x, z) || Math.hypot(x - elio.root.position.x, z - elio.root.position.z) < 0.9;
 type Spot = (typeof world.flowers)[number];
+type Pick = (typeof world.trinkets)[number];
 
-function followCamera(dt: number, dist: number, pitch: number) {
-  camTarget.lerp(pos, 1 - Math.exp(-dt * 5));
+function followCamera(dt: number, dist: number, pitch: number, at = pos) {
+  camTarget.lerp(at, 1 - Math.exp(-dt * 5));
   camera.position.set(camTarget.x, camTarget.y + 1 + Math.sin(pitch) * dist, camTarget.z + Math.cos(pitch) * dist);
   camera.lookAt(camTarget.x, camTarget.y + 1, camTarget.z);
 }
 
+const elioFocus = new THREE.Vector3(), tmpV = new THREE.Vector3();
+const talkShift = new THREE.Vector3(0, -1.2, 2.2);
+let talkAgain = 0, zoom = 1; // mashing the key after a goodbye must not reopen the box at once
+// Elio: three lines and the golden kiss once a day, then a goodbye line.
+function talkToElio() {
+  const gave = state.elioDay === state.date;
+  mode = 'talk';
+  ui.setAction(null);
+  ui.setPlaying(false);
+  sfx.ui();
+  const lines = gave ? ['See you tomorrow, somewhere else!'] : ['Ahah! You found me!', world.elio.line, 'Here, this is for you.'];
+  ui.dialogue('Elio', lines, () => sfx.blip(), () => {
+    consumeAction(); // the key that closed the box must not reopen it
+    talkAgain = clock.elapsedTime + 0.8;
+    mode = 'outdoor';
+    ui.setPlaying(true);
+    if (!gave) {
+      state.elioDay = state.date;
+      state.pocket.push('golden_kiss');
+      state.kissesTotal += 3;
+      save();
+      elio.cheer();
+      player.hop();
+      tmpV.copy(elio.root.position).setY(elio.root.position.y + 1.6);
+      hearts.fire(tmpV, true);
+      player.basketWorld(basketPos);
+      outdoor.fx.pick(pickupGeometry('golden_kiss'), new THREE.Matrix4().makeTranslation(tmpV), '#f5c542', basketPos);
+      sfx.golden();
+      ui.toast("Elio's Golden Kiss! +3 kisses", 2600);
+    }
+    refreshBasket();
+  });
+}
+
 function tickOutdoor(dt: number, time: number) {
-  walk(dt, outdoorBlocked, 7, time);
+  const talking = mode === 'talk';
+  if (talking) {
+    // Turn toward Elio while he talks.
+    const d = Math.atan2(elio.root.position.x - pos.x, elio.root.position.z - pos.z) - facing;
+    facing += Math.atan2(Math.sin(d), Math.cos(d)) * Math.min(1, dt * 8);
+    player.root.rotation.y = facing;
+    player.animate(dt, 0, time);
+  } else walk(dt, outdoorBlocked, 7, time, true);
   pos.y += (walkY(world, pos.x, pos.z) - pos.y) * Math.min(1, dt * 14);
   player.root.position.copy(pos);
   // Behind the cottage: dissolve it so Werka stays visible.
   const behind = pos.z < HOUSE.d / 2 + 0.3 && pos.z > -HOUSE.d / 2 - 9 && Math.abs(pos.x) < HOUSE.w / 2 + 3;
   U.uCut.value += ((behind ? 1 : 0) - U.uCut.value) * Math.min(1, dt * 6);
+  elio.update(dt, time, pos, walkY(world, elio.root.position.x, elio.root.position.z));
+  pickups.update(time, pos);
+  hearts.update(dt, camera);
 
-  // Closest unpicked flower in reach.
-  let best: Spot | null = null, bestD = 2.1;
+  // Closest unpicked flower or pickup in reach; Elio wins when he is right there.
+  let best: Spot | null = null, bestP: Pick | null = null, bestD = 2.1;
   for (const f of world.flowers) {
     if (state.picked.has(f.id)) continue;
     const dx = f.x - pos.x, dz = f.z - pos.z;
@@ -215,13 +308,22 @@ function tickOutdoor(dt: number, time: number) {
     const d = Math.hypot(dx, dz);
     if (d < bestD) { bestD = d; best = f; }
   }
+  for (const p of [...world.trinkets, ...world.kisses]) {
+    if (state.picked.has(p.id)) continue;
+    const d = Math.hypot(p.x - pos.x, p.z - pos.z);
+    if (d < bestD + 0.3) { bestD = d - 0.3; bestP = p; best = null; } // a little extra reach: they hover
+  }
+  const atElio = !talking && Math.hypot(pos.x - elio.root.position.x, pos.z - elio.root.position.z) < 2.8;
+  if (atElio) best = bestP = null;
   const atDoor = Math.hypot(pos.x - DOOR.x, pos.z - DOOR.z) < 2.3;
-  outdoor.fx.highlight(best ? flowerGeometry(best.type) : null, best ? outdoor.flowerPose.get(best.id)! : null, time);
-  ui.setAction(best ? `Pick ${best.type}` : atDoor ? 'Enter the house' : null);
+  outdoor.fx.highlight(best ? flowerGeometry(best.type) : bestP ? pickupGeometry(bestP.type) : null,
+    best ? outdoor.flowerPose.get(best.id)! : bestP ? pickups.pose(bestP.id) : null, time);
+  ui.setAction(talking ? null : atElio ? 'Talk to Elio' : best ? `Pick ${best.type}` : bestP ? `Pick up ${POCKET_INFO[bestP.type].name}` : atDoor ? 'Enter the house' : null);
 
   player.basketWorld(basketPos);
-  if (consumeAction() && !busy) {
-    if (best) {
+  if (consumeAction() && !busy && !talking) {
+    if (atElio) { if (time > talkAgain) talkToElio(); }
+    else if (best) {
       if (state.inventory.length >= MAX_INVENTORY) { ui.toast('Basket full! Craft a bouquet in the house.', 2200); sfx.full(); }
       else {
         state.inventory.push({ id: best.id, type: best.type, color: best.color });
@@ -234,6 +336,22 @@ function tickOutdoor(dt: number, time: number) {
         sfx.pick();
         ui.toast(`Picked ${best.type}`);
       }
+    } else if (bestP) {
+      const info = POCKET_INFO[bestP.type], kiss = bestP.type === 'kiss';
+      if (pocketCount() >= MAX_POCKET) { ui.toast('Pocket full! Tie a keepsake onto a bouquet.', 2200); sfx.full(); }
+      else {
+        state.pocket.push(bestP.type);
+        state.picked.add(bestP.id);
+        if (kiss) state.kissesTotal++;
+        outdoor.fx.pick(pickupGeometry(bestP.type), pickups.pose(bestP.id), info.color, basketPos);
+        if (kiss) hearts.fire(tmpV.setFromMatrixPosition(pickups.pose(bestP.id)));
+        pickups.hide(bestP.id);
+        player.hop();
+        save();
+        refreshBasket();
+        if (kiss) sfx.kiss(); else sfx.trinket();
+        ui.toast(kiss ? "A kiss from Elio! \u2665" : `Found a ${info.name}`);
+      }
     } else if (atDoor) { sfx.door(); run(enterHouse); }
   }
   outdoor.fx.update(dt, basketPos);
@@ -241,7 +359,10 @@ function tickOutdoor(dt: number, time: number) {
   dayT = (dayT + (dt * 1000) / DAY_CYCLE_DURATION) % 1;
   ui.setTime(timeLabel(dayT));
   ({ day, golden } = outdoor.setTime(dayT, pos, time));
-  followCamera(dt, CAM.dist, CAM.pitch);
+  // While talking, frame Werka and Elio together.
+  // Closer, and aimed a little below them so the speech box doesn't cover the pair.
+  zoom += ((talking ? 0.62 : 1) - zoom) * Math.min(1, dt * 3);
+  followCamera(dt, CAM.dist * zoom, CAM.pitch, talking ? elioFocus.copy(elio.root.position).lerp(pos, 0.5).add(talkShift) : pos);
   // Home compass once the cottage is well out of view.
   const hx = -pos.x, hz = -pos.z;
   ui.setCompass(Math.hypot(hx, hz) > 26 ? Math.atan2(hx, -hz) : null);
@@ -261,10 +382,7 @@ function tickHouse(dt: number, time: number) {
   }
   // Same high angle indoors, closer, drifting only a little with Werka.
   camTarget.lerp(pos, 1 - Math.exp(-dt * 4));
-  // Long lens: back off 1.5x versus a 30 degree lens; portrait backs off more so the room fits.
-  const k = (camera.aspect < 1 ? 1.45 : 1) * 1.5;
-  camera.position.set(camTarget.x * 0.35, 19 * k, 16.5 * k + camTarget.z * 0.3);
-  camera.lookAt(camTarget.x * 0.45, 0.6, camTarget.z * 0.45 - 0.6);
+  interiorCamera(camera, camTarget);
 }
 
 const clock = new THREE.Clock();
@@ -274,10 +392,11 @@ renderer.setAnimationLoop(() => {
   const time = clock.elapsedTime;
   U.uTime.value = time;
   post.grade.uniforms.uTime.value = time;
-  post.grade.uniforms.uRays.value = mode === 'outdoor' || mode === 'menu' ? day * (0.7 + golden) : 0;
+  const outside = mode === 'outdoor' || mode === 'talk' || mode === 'menu';
+  post.grade.uniforms.uRays.value = outside ? day * (0.7 + golden) : 0;
   post.grade.uniforms.uHigh.value.set('#ffe2b0').lerp(tmpGold, golden * 0.8);
-  post.grade.uniforms.uTilt.value = mode === 'outdoor' || mode === 'menu' ? 1 : 0;
-  renderer.toneMappingExposure = 1.05 + (mode === 'outdoor' || mode === 'menu' ? golden * 0.45 : 0);
+  post.grade.uniforms.uTilt.value = outside ? 1 : 0;
+  renderer.toneMappingExposure = 1.05 + (outside ? golden * 0.45 : 0);
   // Quality probe: average 60 frames (after 30 warm-up) on the title screen at 'med'.
   if (probe >= 0 && mode === 'menu') {
     probe++;
@@ -292,7 +411,7 @@ renderer.setAnimationLoop(() => {
     }
   }
   U.uPlayer.value.copy(pos);
-  if (mode === 'outdoor') {
+  if (mode === 'outdoor' || mode === 'talk') {
     tickOutdoor(dt, time);
     U.uCam.value.copy(camera.position);
     ambience(day, false, dt);
@@ -301,12 +420,13 @@ renderer.setAnimationLoop(() => {
     if (mode === 'house') tickHouse(dt, time);
     else { consumeAction(); player.animate(dt, 0, time); }
     U.uCam.value.copy(camera.position);
-    interior.update(time);
+    interior.update(time, day);
     ambience(day, true, dt);
     post.draw(interior.scene, camera);
   } else if (mode === 'gallery') {
     consumeAction();
     galleryView.update(time);
+    if (shown) shown.rotation.y = time * 0.5;
     ambience(day, true, dt);
     post.draw(galleryView.scene, galleryView.camera);
   } else {
@@ -335,6 +455,13 @@ if (import.meta.env.DEV) {
       get mode() { return mode; },
       pos, world, state,
       teleport: (x: number, z: number) => { pos.x = x; pos.z = z; camTarget.set(x, pos.y, z); },
+      // Stand just in front of (camera side of) Elio, or next to a pickup by id.
+      toElio: () => { const e = world.elio; pos.set(e.ox, walkY(world, e.ox, e.oz + 2), e.oz + 2); camTarget.copy(pos); },
+      toPickup: (id: string) => {
+        const p = [...world.trinkets, ...world.kisses].find(q => q.id === id)!;
+        pos.set(p.x + 1, walkY(world, p.x + 1, p.z), p.z); camTarget.copy(pos);
+      },
+      action: () => { input.action = true; },
       setDay: (t: number) => { dayT = t; },
       get quality() { return quality; },
       setQuality: (q: Quality) => applyQuality(q),

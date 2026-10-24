@@ -1,7 +1,7 @@
 // Werka: chibi low-poly figure with a trailing scarf and a basket that fills with picked colours.
 import * as THREE from 'three';
 import { MAX_INVENTORY } from '../world/data.ts';
-import { toon, addOutlines, bakeChildren } from './toon.ts';
+import { toon, addOutlines, bakeColors } from './toon.ts';
 
 const mats = new Map<string, THREE.Material>();
 const mat = (color: string) => {
@@ -15,6 +15,22 @@ const mesh = (g: THREE.BufferGeometry, color: string, x = 0, y = 0, z = 0) => {
   m.castShadow = true;
   return m;
 };
+
+// Rigid part -> one outlined mesh plus one mesh of its tiny unoutlined details (eyes, glasses),
+// via bakeColors. Sub-groups, instanced and userData.keep meshes stay as they are.
+export function flatten(g: THREE.Object3D) {
+  const parts = g.children.filter(c => (c as THREE.Mesh).isMesh && !(c as THREE.InstancedMesh).isInstancedMesh && !c.userData.keep);
+  for (const tiny of [false, true]) {
+    const set = parts.filter(c => !!c.userData.noOutline === tiny);
+    if (set.length < 2) continue;
+    const tmp = new THREE.Group();
+    tmp.add(...set);
+    for (const c of [...bakeColors(tmp).children]) {
+      if (tiny) { c.userData.noOutline = true; c.castShadow = false; }
+      g.add(c);
+    }
+  }
+}
 
 export function buildPlayer() {
   const root = new THREE.Group();
@@ -91,7 +107,7 @@ export function buildPlayer() {
   // Fewer draw calls: merge each rigid part's meshes by material (torso stays separate: it breathes).
   torso.userData.keep = true;
   bun.userData.keep = true;
-  for (const g of [head, body, basket, ...legs, ...arms]) bakeChildren(g);
+  for (const g of [head, body, basket, ...legs, ...arms]) flatten(g);
   addOutlines(body, 0.022);
 
   // Soft contact shadow so she stays grounded even where the shadow map is coarse.
@@ -111,8 +127,8 @@ export function buildPlayer() {
     return { m: p, t: 9 };
   });
   let nextPuff = 0;
-  const puff = (at: THREE.Vector3) => {
-    for (let k = 0; k < 2; k++) {
+  const puff = (at: THREE.Vector3, n = 2) => {
+    for (let k = 0; k < n; k++) {
       const p = puffs[nextPuff++ % puffs.length];
       p.m.position.set(at.x + (Math.random() - 0.5) * 0.4, at.y + 0.1, at.z + (Math.random() - 0.5) * 0.4);
       p.t = 0; p.m.visible = true;
@@ -124,9 +140,10 @@ export function buildPlayer() {
   const animate = (dt: number, speed: number, time: number) => {
     phase += dt * Math.max(speed, 0.0001) * 1.5;
     const s = Math.min(1, speed / 5);
+    const r = Math.min(1, Math.max(0, (speed - 7.5) / 4)); // 0 walk .. 1 full run
     hopT += dt;
     const hopY = hopT < 0.38 ? Math.sin((hopT / 0.38) * Math.PI) * 0.45 : 0;
-    body.position.y = Math.abs(Math.sin(phase)) * 0.1 * s + Math.sin(time * 2) * 0.012 * (1 - s) + hopY;
+    body.position.y = Math.abs(Math.sin(phase)) * (0.1 + 0.08 * r) * s + Math.sin(time * 2) * 0.012 * (1 - s) + hopY;
     // Idle breathing and hair that lags a beat behind the body.
     torso.scale.set(1 + Math.sin(time * 2.2) * 0.02 * (1 - s), 1 + Math.sin(time * 2.2) * 0.035 * (1 - s), 1);
     bun.position.y = 0.38 + Math.sin(phase * 2 - 0.9) * 0.035 * s + Math.sin(time * 2.2 - 0.8) * 0.01 + (hopT < 0.38 ? -hopY * 0.12 : 0);
@@ -141,17 +158,17 @@ export function buildPlayer() {
       p.m.position.y += dt * 0.6;
       (p.m.material as THREE.MeshBasicMaterial).opacity = 0.55 * (1 - k);
     }
-    lean += (s * 0.18 - lean) * Math.min(1, dt * 8);
+    lean += (s * (0.18 + 0.16 * r) - lean) * Math.min(1, dt * 8);
     body.rotation.x = lean;
-    legs[0].rotation.x = Math.sin(phase) * 0.7 * s;
-    legs[1].rotation.x = -Math.sin(phase) * 0.7 * s;
-    arms[0].rotation.x = -Math.sin(phase) * 0.6 * s;
-    arms[1].rotation.x = Math.sin(phase) * 0.3 * s - 0.2;
+    legs[0].rotation.x = Math.sin(phase) * (0.7 + 0.35 * r) * s;
+    legs[1].rotation.x = -Math.sin(phase) * (0.7 + 0.35 * r) * s;
+    arms[0].rotation.x = -Math.sin(phase) * (0.6 + 0.5 * r) * s;
+    arms[1].rotation.x = Math.sin(phase) * (0.3 + 0.15 * r) * s - 0.2 - 0.3 * r;
     basket.rotation.z = Math.sin(phase) * 0.1 * s;
     head.rotation.z = Math.sin(time * 1.3) * 0.03;
     scarf.forEach((seg, i) => {
       // Hangs down at rest, streams out behind her when she runs.
-      seg.rotation.x = (i === 0 ? -1.15 : -0.22) * (1 - s * 0.85) + Math.sin(time * 6 - i * 0.9) * (0.08 + 0.22 * s);
+      seg.rotation.x = (i === 0 ? -1.15 : -0.22) * (1 - s * 0.85 - r * 0.1) + Math.sin(time * (6 + 4 * r) - i * 0.9) * (0.08 + 0.22 * s);
       seg.rotation.y = Math.sin(time * 3.1 - i * 0.7) * 0.25;
     });
   };

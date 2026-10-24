@@ -27,7 +27,7 @@ export class SoundManager {
         console.log("Playing BGM (Placeholder)");
     }
 
-    public playSFX(type: 'STEP' | 'PICK' | 'ENTER' | 'CRAFT') {
+    public playSFX(type: 'STEP' | 'PICK' | 'ENTER' | 'CRAFT' | 'CHIME') {
         if (this.isMuted || !this.audioContext) return;
 
         // Resume context if suspended (browser policy)
@@ -86,6 +86,18 @@ export class SoundManager {
                 gain.gain.linearRampToValueAtTime(0, now + 0.5);
                 osc.start(now);
                 osc.stop(now + 0.5);
+                break;
+
+            case 'CHIME':
+                // Soft rising three-note bell
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(880, now);
+                osc.frequency.setValueAtTime(1175, now + 0.09);
+                osc.frequency.setValueAtTime(1568, now + 0.18);
+                gain.gain.setValueAtTime(0.08, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+                osc.start(now);
+                osc.stop(now + 0.6);
                 break;
         }
     }

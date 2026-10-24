@@ -1,6 +1,6 @@
 // Plain DOM overlay: title, intro, HUD, contextual action, crafting picker, gallery list, touch controls.
 import './style.css';
-import { MAX_INVENTORY, MAX_BOUQUET_SIZE } from '../world/data.ts';
+import { MAX_INVENTORY, MAX_BOUQUET_SIZE, MAX_POCKET, MAX_EXTRAS, POCKET_INFO } from '../world/data.ts';
 import type { Item, Bouquet } from '../state.ts';
 
 const root = document.getElementById('ui')!;
@@ -15,6 +15,7 @@ const $ = <T extends HTMLElement = HTMLElement>(parent: HTMLElement, sel: string
 
 export const touch = matchMedia('(pointer: coarse)').matches;
 
+const HEART = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 14.2S1.6 10.3 1.6 5.9A3.3 3.3 0 0 1 8 4.4a3.3 3.3 0 0 1 6.4 1.5C14.4 10.3 8 14.2 8 14.2z" fill="currentColor"/></svg>`;
 const SUN = `<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3.4" fill="currentColor"/><g stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M8 1.2v1.6M8 13.2v1.6M1.2 8h1.6M13.2 8h1.6M3.2 3.2l1.1 1.1M11.7 11.7l1.1 1.1M3.2 12.8l1.1-1.1M11.7 4.3l1.1-1.1"/></g></svg>`;
 const MOON = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.8 1.6a6.4 6.4 0 1 0 3.6 10.9A5.6 5.6 0 0 1 10.8 1.6z" fill="currentColor"/></svg>`;
 const SOUND_ON = `<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 7.5h3l4-3.5v12l-4-3.5H3z" fill="currentColor"/><path d="M13 7a4 4 0 0 1 0 6M15.2 4.8a7 7 0 0 1 0 10.4" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>`;
@@ -22,7 +23,8 @@ const SOUND_OFF = `<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 7.5h3
 
 const hud = el(`<div class="hud" hidden aria-live="polite">
   <div class="dots"></div>
-  <div class="meta"><span class="time"></span><span class="n"></span></div></div>`);
+  <div class="meta"><span class="time"></span><span class="n"></span></div>
+  <div class="pocket"><div class="slots"></div><div class="kisses" title="Kisses from Elio">${HEART}<b>0</b></div></div></div>`);
 const prompt = el(`<div class="prompt" hidden></div>`);
 const toastEl = el(`<div class="toast" role="status" hidden></div>`);
 export const stick = el(`<div class="stick" hidden aria-hidden="true"><div class="knob"></div></div>`);
@@ -44,8 +46,8 @@ export function tutorial(done: () => void) {
   try { seen = localStorage.getItem('werka3d_tutorial') === '1'; } catch { /* ignore */ }
   if (seen) return done();
   const steps = touch
-    ? ['Drag anywhere on the left side to walk.', 'Walk up to a flower and tap the pink button to pick it.', 'Carry up to 12, then craft a bouquet at the table in the cottage.']
-    : ['Walk with WASD or the arrow keys.', 'Walk up to a flower and press E or Space to pick it.', 'Carry up to 12, then craft a bouquet at the table in the cottage.'];
+    ? ['Drag anywhere on the left side to walk. Push the stick all the way to run.', 'Walk up to a flower or a trinket and tap the pink button to pick it up.', 'Carry up to 12 flowers, then craft a bouquet at the table in the cottage.', 'Elio is hiding somewhere today. Can you find him?']
+    : ['Walk with WASD or the arrow keys. Hold Shift to run.', 'Walk up to a flower or a trinket and press E or Space to pick it up.', 'Carry up to 12 flowers, then craft a bouquet at the table in the cottage.', 'Elio is hiding somewhere today. Can you find him?'];
   const t = el(`<div class="tutorial" role="dialog" aria-label="How to play"><div class="card">
     <h2>How to play</h2><ol>${steps.map(x => `<li>${x}</li>`).join('')}</ol>
     <button class="btn petal ok">Let's go</button></div></div>`);
@@ -88,6 +90,31 @@ export function setHud(inv: Item[] | null) {
   $(hud, '.n').textContent = `${inv.length} / ${MAX_INVENTORY}`;
 }
 
+// Pocket: trinkets and kisses (the golden kiss lights the kiss counter instead of taking a slot).
+let lastKisses = -1, lastPocket = '', lastLen = -1;
+export function setPocket(items: string[], kisses: number, icon: (id: string) => string | null) {
+  const key = items.join();
+  if (key !== lastPocket) {
+    lastPocket = key;
+    const list = items.filter(i => i !== 'golden_kiss');
+    const pop = list.length > lastLen && lastLen >= 0 ? list.length - 1 : -1;
+    lastLen = list.length;
+    $(hud, '.slots').innerHTML = Array.from({ length: MAX_POCKET }, (_, i) => {
+      const id = list[i];
+      if (!id) return `<span class="slot-p"></span>`;
+      const url = icon(id), info = POCKET_INFO[id];
+      return `<span class="slot-p full${i === pop ? ' pop' : ''}" title="${info.name}">${url ? `<img src="${url}" alt="${info.name}">` : info.emoji}</span>`;
+    }).join('');
+    $(hud, '.kisses').classList.toggle('golden', items.includes('golden_kiss'));
+  }
+  if (kisses !== lastKisses) {
+    const k = $(hud, '.kisses');
+    k.querySelector('b')!.textContent = String(kisses);
+    if (lastKisses >= 0) { k.classList.remove('bump'); void k.offsetWidth; k.classList.add('bump'); }
+    lastKisses = kisses;
+  }
+}
+
 let lastTime = '';
 export function setTime(label: string) {
   if (label === lastTime) return;
@@ -122,6 +149,45 @@ export function toast(msg: string, ms = 1400) {
   toastTimer = window.setTimeout(() => (toastEl.hidden = true), ms);
 }
 
+// Speech box at the bottom: typed lines, tap / E / Space / Enter completes the line, then advances.
+// onLine(i) fires when line i starts typing.
+export function dialogue(name: string, lines: string[], onLine: (i: number) => void, done: () => void) {
+  const d = el(`<div class="talk" role="dialog" aria-label="${name}"><div class="box">
+    <span class="who">${name}</span><p aria-live="polite"></p><span class="more" aria-hidden="true"></span></div></div>`);
+  const p = $(d, 'p');
+  let line = -1, n = 0, timer = 0;
+  const next = () => {
+    clearInterval(timer);
+    if (++line >= lines.length) return close();
+    n = 0;
+    d.classList.remove('ready');
+    onLine(line);
+    const text = lines[line];
+    timer = window.setInterval(() => {
+      p.textContent = text.slice(0, ++n);
+      if (n >= text.length) { clearInterval(timer); d.classList.add('ready'); }
+    }, 32);
+  };
+  const advance = () => {
+    if (n < lines[line].length) { n = lines[line].length; p.textContent = lines[line]; clearInterval(timer); d.classList.add('ready'); }
+    else next();
+  };
+  const key = (e: KeyboardEvent) => {
+    if (['KeyE', 'Space', 'Enter'].includes(e.code) && !e.repeat) { e.preventDefault(); advance(); }
+    else if (e.code === 'Escape') close();
+  };
+  const close = () => {
+    clearInterval(timer);
+    removeEventListener('keydown', key);
+    d.classList.add('out');
+    setTimeout(() => d.remove(), 250);
+    done();
+  };
+  addEventListener('keydown', key);
+  d.addEventListener('pointerdown', e => { e.preventDefault(); advance(); });
+  next();
+}
+
 // Fade to black, run the switch, fade back in.
 export async function fade(swap: () => void) {
   const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -138,7 +204,7 @@ export function menu(opts: { bouquets: number; quality: string; onStart: () => v
     <div class="row"><button class="btn petal start">Start today's walk</button>
     <button class="btn ghost gal">Gallery · ${opts.bouquets}</button></div>
     <div class="row small"><button class="link qual">Graphics: ${opts.quality}</button><button class="link reset">Reset progress</button></div></div>
-    <p class="hint">${touch ? 'Drag on the left to walk. Tap the button to pick.' : 'WASD or arrows to walk. E or Space to pick.'}</p></div>`);
+    <p class="hint">${touch ? 'Drag on the left to walk, push to the edge to run. Tap the button to pick.' : 'WASD or arrows to walk, Shift to run. E or Space to pick.'}</p></div>`);
   const close = () => m.remove();
   $(m, '.start').onclick = () => { close(); opts.onStart(); };
   $(m, '.gal').onclick = () => { close(); opts.onGallery(); };
@@ -172,14 +238,16 @@ export function intro(date: string, done: () => void) {
   o.addEventListener('pointerdown', finish);
 }
 
-export function craft(inv: Item[], icon: (type: string) => string | null, onCraft: (picked: number[]) => void, onCancel: () => void) {
+export function craft(inv: Item[], pocket: string[], icon: (type: string) => string | null, pocketIcon: (id: string) => string | null,
+  onCraft: (picked: number[], extras: number[]) => void, onCancel: () => void) {
   const p = el(`<div class="panel"><div class="card" role="dialog" aria-label="Crafting table">
     <h2>Crafting table</h2><p class="sub">Choose up to ${MAX_BOUQUET_SIZE} flowers for today's bouquet.</p>
     <div class="grid"></div>
+    <div class="keeps"${pocket.length ? '' : ' hidden'}><h3>Tie on a keepsake <span>up to ${MAX_EXTRAS}</span></h3><div class="extras"></div></div>
     <div class="row"><button class="btn ghost back">Back</button><span class="count"></span>
     <button class="btn petal make">Tie the bouquet</button></div></div></div>`);
-  const sel = new Set<number>();
-  const grid = $(p, '.grid');
+  const sel = new Set<number>(), ext = new Set<number>();
+  const grid = $(p, '.grid'), extras = $(p, '.extras');
   const pic = (it: Item) => {
     const url = icon(it.type);
     return url ? `<img class="pic" src="${url}" alt="">` : `<span class="bloom" style="--c:${it.color}"></span>`;
@@ -188,31 +256,39 @@ export function craft(inv: Item[], icon: (type: string) => string | null, onCraf
     grid.innerHTML = Array.from({ length: MAX_INVENTORY }, (_, i) => inv[i]
       ? `<button class="slot" data-i="${i}" aria-pressed="${sel.has(i)}">${pic(inv[i])}${inv[i].type}</button>`
       : `<div class="slot empty"></div>`).join('');
-    $(p, '.count').textContent = `${sel.size} / ${MAX_BOUQUET_SIZE}`;
+    extras.innerHTML = pocket.map((id, i) => {
+      const url = pocketIcon(id), info = POCKET_INFO[id];
+      return `<button class="keep" data-x="${i}" aria-pressed="${ext.has(i)}" title="${info.name}">${url ? `<img src="${url}" alt="">` : info.emoji}<span>${info.name}</span></button>`;
+    }).join('');
+    $(p, '.count').textContent = `${sel.size} / ${MAX_BOUQUET_SIZE}${ext.size ? ` + ${ext.size}` : ''}`;
     $<HTMLButtonElement>(p, '.make').disabled = sel.size === 0;
   };
-  grid.onclick = e => {
-    const b = (e.target as HTMLElement).closest<HTMLElement>('[data-i]');
+  p.onclick = e => {
+    const b = (e.target as HTMLElement).closest<HTMLElement>('[data-i], [data-x]');
     if (!b) return;
-    const i = Number(b.dataset.i);
-    if (sel.has(i)) sel.delete(i); else if (sel.size < MAX_BOUQUET_SIZE) sel.add(i);
+    const flower = b.dataset.i !== undefined, i = Number(flower ? b.dataset.i : b.dataset.x);
+    const set = flower ? sel : ext, max = flower ? MAX_BOUQUET_SIZE : MAX_EXTRAS;
+    if (set.has(i)) set.delete(i); else if (set.size < max) set.add(i);
     render();
-    grid.querySelector<HTMLElement>(`[data-i="${i}"]`)?.focus();
+    p.querySelector<HTMLElement>(flower ? `[data-i="${i}"]` : `[data-x="${i}"]`)?.focus();
   };
   $(p, '.back').onclick = () => { p.remove(); onCancel(); };
-  $(p, '.make').onclick = () => { p.remove(); onCraft([...sel].sort((a, b) => a - b)); };
+  $(p, '.make').onclick = () => { p.remove(); onCraft([...sel].sort((a, b) => a - b), [...ext].sort((a, b) => a - b)); };
   render();
   if (!inv.length) $(p, '.sub').textContent = 'Your basket is empty. Go pick some flowers first.';
 }
 
-export function gallery(list: Bouquet[], onShow: (b: Bouquet | null) => void, onClose: () => void) {
+export function gallery(list: Bouquet[], pocketIcon: (id: string) => string | null, onShow: (b: Bouquet | null) => void, onClose: () => void) {
   const g = el(`<div class="gallery" role="region" aria-label="Gallery"><h2>Gallery</h2><ul></ul>
     <div class="row"><button class="btn close">Back</button></div></div>`);
   const ul = $(g, 'ul');
   let cur = 0;
   const render = () => {
     ul.innerHTML = list.map((b, i) => `<li><button data-i="${i}" aria-current="${i === cur}">
-      <span class="date">${b.date}</span><span class="strip">${b.colors.map(c => `<i style="--c:${c}"></i>`).join('')}</span></button></li>`).join('');
+      <span class="date">${b.date}</span><span class="strip">${b.colors.map(c => `<i style="--c:${c}"></i>`).join('')}${(b.extras ?? []).map(id => {
+        const url = pocketIcon(id), info = POCKET_INFO[id];
+        return `<b class="x" title="${info?.name ?? id}">${url ? `<img src="${url}" alt="${info?.name ?? id}">` : info?.emoji ?? ''}</b>`;
+      }).join('')}</span></button></li>`).join('');
     onShow(list[cur] ?? null);
   };
   ul.onclick = e => {

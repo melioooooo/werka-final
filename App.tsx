@@ -17,15 +17,20 @@ const loadSaved = () => {
     try { return JSON.parse(localStorage.getItem(k) || 'null') ?? fallback; } catch { return fallback; }
   };
   let inventory = parse<Flower[]>('werka_inventory', []);
+  let pocket = parse<string[]>('werka_pocket', []);
   const last = localStorage.getItem('werka_last_date');
   if (last && last !== today) {
     console.log("New day detected, resetting inventory.");
     inventory = [];
+    pocket = [];
     localStorage.removeItem(SAVE_KEY);
   }
+  if (!Array.isArray(pocket)) pocket = [];
+  const kisses = Number(localStorage.getItem('werka_kisses_total')) || 0;
+  const elioDay = localStorage.getItem('werka_elio_day');
   const bouquets = parse<Bouquet[]>('werka_bouquets', []).map(b => (b.imageUrl?.startsWith('data:image/png') ? b : { ...b, imageUrl: undefined }));
   store('werka_last_date', today);
-  return { today, inventory, bouquets };
+  return { today, inventory, bouquets, pocket, kisses, elioDay };
 };
 
 // Styled Start Menu Component
@@ -87,7 +92,7 @@ const StartMenu: React.FC<{
         ) : (
           bouquets.slice(0, 5).map(b => (
             <div key={b.id} className="flex-shrink-0 w-14 h-14 sm:w-20 sm:h-20 bg-amber-100 p-1 rounded border border-amber-800/30 shadow-md hover:scale-110 transition-transform duration-200" title={b.date}>
-              <img src={b.imageUrl ?? bouquetSvgUrl(b.flowers)} alt="Bouquet" style={{ imageRendering: 'pixelated' }} className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all" />
+              <img src={b.imageUrl ?? bouquetSvgUrl(b.flowers, b.extras)} alt="Bouquet" style={{ imageRendering: 'pixelated' }} className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all" />
             </div>
           ))
         )}
@@ -136,6 +141,9 @@ const App: React.FC = () => {
   const [inventory, setInventory] = useState<Flower[]>(init.inventory);
   const [bouquets, setBouquets] = useState<Bouquet[]>(init.bouquets);
   const [currentDate, setCurrentDate] = useState<string>(init.today);
+  const [pocket, setPocket] = useState<string[]>(init.pocket);
+  const [kisses, setKisses] = useState<number>(init.kisses);
+  const [elioDay, setElioDay] = useState<string | null>(init.elioDay);
 
   // Save state whenever it changes
   useEffect(() => {
@@ -146,13 +154,21 @@ const App: React.FC = () => {
     store('werka_bouquets', JSON.stringify(bouquets));
   }, [bouquets]);
 
+  useEffect(() => { store('werka_pocket', JSON.stringify(pocket)); }, [pocket]);
+  useEffect(() => { store('werka_kisses_total', String(kisses)); }, [kisses]);
+  useEffect(() => { if (elioDay) store('werka_elio_day', elioDay); }, [elioDay]);
+
   const handleResetProgress = () => {
     if (confirm("Are you sure you want to reset all progress? This cannot be undone.")) {
       localStorage.removeItem('werka_inventory');
       localStorage.removeItem('werka_bouquets');
       localStorage.removeItem(SAVE_KEY);
+      ['werka_pocket', 'werka_kisses_total', 'werka_elio_day'].forEach(k => localStorage.removeItem(k));
       setInventory([]);
       setBouquets([]);
+      setPocket([]);
+      setKisses(0);
+      setElioDay(null);
       alert("Progress reset.");
     }
   };
@@ -179,16 +195,20 @@ const App: React.FC = () => {
     setGameState(GameState.CRAFTING);
   };
 
-  const handleCraftBouquet = (selectedTypes: FlowerType[]) => {
+  const handleCraftBouquet = (selectedTypes: FlowerType[], extras: string[]) => {
     const newBouquet: Bouquet = {
       id: Date.now().toString(),
       date: currentDate,
       flowers: selectedTypes,
-      description: `A lovely arrangement of ${selectedTypes.join(', ')}.`
+      description: `A lovely arrangement of ${selectedTypes.join(', ')}.`,
+      extras,
     };
     setBouquets(prev => [newBouquet, ...prev]);
+    const left = [...pocket];
+    extras.forEach(k => { const i = left.indexOf(k); if (i !== -1) left.splice(i, 1); });
+    setPocket(left);
     // Pixel-art picture arrives later; the SVG shows until then (or forever if generation fails)
-    generateBouquetImage(selectedTypes, newBouquet.id).then(imageUrl => {
+    generateBouquetImage(selectedTypes, newBouquet.id, extras).then(imageUrl => {
       if (imageUrl) setBouquets(prev => prev.map(b => (b.id === newBouquet.id ? { ...b, imageUrl } : b)));
     });
 
@@ -203,7 +223,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 bg-neutral-900 flex items-center justify-center p-2 sm:p-4 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] overflow-hidden">
+    <div className="fixed inset-0 bg-neutral-900 flex items-center justify-center p-1 sm:p-4 [@media(max-height:500px)]:p-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] overflow-hidden">
       <div className="max-w-4xl w-full h-full flex flex-col items-center justify-center">
         <div className="w-full h-full max-h-[100%] transition-all duration-500 transform shadow-2xl rounded-xl overflow-hidden flex items-center justify-center">
           {gameState === GameState.START_MENU && (
@@ -220,12 +240,20 @@ const App: React.FC = () => {
               onInventoryChange={setInventory}
               initialInventory={inventory}
               dateSeed={currentDate}
+              pocket={pocket}
+              onPocketChange={setPocket}
+              kisses={kisses}
+              onKiss={n => setKisses(k => k + n)}
+              elioGifted={elioDay === currentDate}
+              onElioGift={() => setElioDay(currentDate)}
             />
           )}
 
           {gameState === GameState.INSIDE_HOUSE && (
             <HouseInterior
               inventory={inventory}
+              pocket={pocket}
+              kisses={kisses}
               onExit={handleExitHouse}
               onCraft={handleGoToCrafting}
             />
@@ -234,6 +262,7 @@ const App: React.FC = () => {
           {gameState === GameState.CRAFTING && (
             <CraftingTable
               inventory={inventory}
+              pocket={pocket}
               onCraft={handleCraftBouquet}
               onCancel={() => setGameState(GameState.INSIDE_HOUSE)}
             />
@@ -245,10 +274,6 @@ const App: React.FC = () => {
               onBack={() => setGameState(GameState.START_MENU)}
             />
           )}
-        </div>
-
-        <div className="mt-8 text-neutral-500 text-xs font-mono">
-          React • Tailwind CSS
         </div>
       </div>
     </div>

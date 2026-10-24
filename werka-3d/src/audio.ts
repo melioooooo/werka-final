@@ -93,6 +93,10 @@ export const sfx = {
   craft() { if (!ctx) return; const t = ctx.currentTime; [523, 659, 784, 1046, 1318].forEach((f, i) => tone(f, t + i * 0.09, 0.8, 0.06, 'triangle')); },
   full() { if (!ctx) return; tone(220, ctx.currentTime, 0.25, 0.05, 'square', 0.8); },
   ui() { if (!ctx) return; tone(880, ctx.currentTime, 0.08, 0.03, 'triangle'); },
+  trinket() { if (!ctx) return; const t = ctx.currentTime; [1568, 2093, 2637].forEach((f, i) => tone(f, t + i * 0.05, 0.5, 0.05, 'sine')); tone(3136, t + 0.18, 0.7, 0.025, 'sine'); },
+  kiss() { if (!ctx) return; const t = ctx.currentTime; tone(784, t, 0.18, 0.06, 'sine', 1.5); [1175, 1568].forEach((f, i) => tone(f, t + 0.12 + i * 0.08, 0.6, 0.05, 'triangle')); },
+  golden() { if (!ctx) return; const t = ctx.currentTime; [523, 659, 784, 1046, 1318, 1568, 2093].forEach((f, i) => tone(f, t + i * 0.08, 1.1, 0.06, 'triangle')); tone(2637, t + 0.6, 1.4, 0.03, 'sine'); },
+  blip() { if (!ctx) return; tone(620 + Math.random() * 120, ctx.currentTime, 0.05, 0.02, 'triangle'); },
 };
 
 export const isMuted = () => muted;

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Bouquet } from '../types';
 import { bouquetSvgUrl, bouquetJpegBlob } from '../utils/bouquetArt';
+import { POCKET_INFO } from '../constants';
 
 interface GalleryProps {
   bouquets: Bouquet[];
@@ -14,7 +15,7 @@ export const Gallery: React.FC<GalleryProps> = ({ bouquets, onBack }) => {
       // Format the filename: "Werka's Bouquet - December 9, 2024.jpg"
       const filename = `Werka's Bouquet - ${bouquet.date}.jpg`;
 
-      const url = window.URL.createObjectURL(await bouquetJpegBlob(bouquet.flowers, bouquet.imageUrl));
+      const url = window.URL.createObjectURL(await bouquetJpegBlob(bouquet.flowers, bouquet.imageUrl, bouquet.extras));
 
       const link = document.createElement('a');
       link.href = url;
@@ -29,13 +30,13 @@ export const Gallery: React.FC<GalleryProps> = ({ bouquets, onBack }) => {
     } catch (error) {
       console.error('Failed to download image:', error);
       // Fallback: open in new tab so user can right-click save
-      window.open(bouquet.imageUrl ?? bouquetSvgUrl(bouquet.flowers), '_blank');
+      window.open(bouquet.imageUrl ?? bouquetSvgUrl(bouquet.flowers, bouquet.extras), '_blank');
     }
   };
 
   return (
-    <div className="w-full max-w-[800px] h-auto min-h-[70dvh] sm:aspect-[4/3] bg-slate-900 relative rounded-xl overflow-hidden border-4 border-slate-700 shadow-2xl flex flex-col p-4 sm:p-8">
-      <div className="flex justify-between items-center mb-3 sm:mb-6">
+    <div className="w-full max-w-[800px] h-auto min-h-[70dvh] sm:aspect-[4/3] [@media(max-height:500px)]:h-full [@media(max-height:500px)]:min-h-0 [@media(max-height:500px)]:aspect-auto [@media(max-height:500px)]:p-3 bg-slate-900 relative rounded-xl overflow-hidden border-4 border-slate-700 shadow-2xl flex flex-col p-4 sm:p-8">
+      <div className="flex justify-between items-center mb-3 sm:mb-6 [@media(max-height:500px)]:mb-2">
         <h2 className="text-xl sm:text-3xl text-purple-200 font-bold pixel-text">My Collection</h2>
         <button
           onClick={onBack}
@@ -46,7 +47,7 @@ export const Gallery: React.FC<GalleryProps> = ({ bouquets, onBack }) => {
       </div>
 
       <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 [@media(max-height:500px)]:grid-cols-3 gap-6 [@media(max-height:500px)]:gap-3">
           {bouquets.length === 0 ? (
             <div className="col-span-2 flex flex-col items-center justify-center h-64 text-slate-500">
               <p className="text-xl mb-2">No bouquets yet.</p>
@@ -56,11 +57,11 @@ export const Gallery: React.FC<GalleryProps> = ({ bouquets, onBack }) => {
             bouquets.map((b) => (
               <div key={b.id} className="bg-white p-3 rounded shadow-xl rotate-1 hover:rotate-0 transition-transform duration-300 group">
                 <div className="aspect-square bg-slate-100 mb-3 overflow-hidden rounded-sm border border-slate-200 relative">
-                  <img src={b.imageUrl ?? bouquetSvgUrl(b.flowers)} alt="Bouquet" style={{ imageRendering: 'pixelated' }} className="w-full h-full object-cover" />
+                  <img src={b.imageUrl ?? bouquetSvgUrl(b.flowers, b.extras)} alt="Bouquet" style={{ imageRendering: 'pixelated' }} className="w-full h-full object-cover" />
                   {/* Download button overlay */}
                   <button
                     onClick={() => downloadImage(b)}
-                    className="absolute bottom-2 right-2 px-3 py-2 bg-green-600 text-white rounded-lg shadow-lg opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 transition-opacity duration-200 hover:bg-green-500 flex items-center gap-2 text-sm font-bold"
+                    className="absolute top-2 right-2 px-3 py-2 bg-green-600 text-white rounded-lg shadow-lg opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 transition-opacity duration-200 hover:bg-green-500 flex items-center gap-2 text-sm font-bold"
                     title="Save to your device"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -74,6 +75,15 @@ export const Gallery: React.FC<GalleryProps> = ({ bouquets, onBack }) => {
                 <div className="font-mono text-xs text-slate-500 border-t border-slate-100 pt-2">
                   <p className="font-bold text-slate-800 uppercase mb-1">{b.date}</p>
                   <p className="leading-tight">{b.flowers.join(', ')}</p>
+                  {b.extras && b.extras.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {b.extras.map((k, i) => (
+                        <span key={i} className="px-1.5 py-0.5 rounded-full bg-pink-50 border border-pink-200 text-pink-700 whitespace-nowrap">
+                          {POCKET_INFO[k]?.emoji} {POCKET_INFO[k]?.name ?? k}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             ))

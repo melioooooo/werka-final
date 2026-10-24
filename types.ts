@@ -125,4 +125,16 @@ export interface Bouquet {
   flowers: FlowerType[];
   imageUrl?: string; // generated pixel-art PNG; absent => SVG fallback
   description: string;
+  extras?: string[]; // pocket item ids (trinket ids, 'kiss', 'golden_kiss'); absent on old saves
+}
+
+// A trinket or kiss lying in the world. id is prefixed 't:' / 'k:' so it never clashes with flower ids.
+export interface WorldItem {
+  id: string;
+  kind: string; // trinket id or 'kiss'
+  x: number;
+  y: number;
+  screenX: number;
+  screenY: number;
+  isPicked: boolean;
 }

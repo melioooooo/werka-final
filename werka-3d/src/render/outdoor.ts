@@ -8,7 +8,7 @@ import {
   biomeWeights, biomeAt, heightAt, riverZ, segDist,
 } from '../world/generate.ts';
 import { buildProps, decorInstances } from './props.ts';
-import { toon, outline, addOutlines, gradient, bake, U } from './toon.ts';
+import { toon, outline, addOutlines, gradient, bakeColors, U, MIST_GLSL } from './toon.ts';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { flowerGeometry } from './flowers.ts';
 
@@ -23,11 +23,11 @@ const place = (mesh: THREE.InstancedMesh, i: number, x: number, y: number, z: nu
 
 // Split scattered instances into a grid of InstancedMeshes so off-screen chunks are culled.
 type Inst = { m: THREE.Matrix4; c: THREE.Color };
-const CHUNK = 40;
-function chunked(geo: THREE.BufferGeometry, mat: THREE.Material, list: Inst[], shadow = false) {
+const CHUNK = 60;
+function chunked(geo: THREE.BufferGeometry, mat: THREE.Material, list: Inst[], shadow = false, size = CHUNK) {
   const cells = new Map<number, Inst[]>();
   for (const it of list) {
-    const k = Math.floor((it.m.elements[12] + HALF) / CHUNK) * 100 + Math.floor((it.m.elements[14] + HALF) / CHUNK);
+    const k = Math.floor((it.m.elements[12] + HALF) / size) * 100 + Math.floor((it.m.elements[14] + HALF) / size);
     (cells.get(k) ?? cells.set(k, []).get(k)!).push(it);
   }
   return [...cells.values()].map(items => {
@@ -78,55 +78,89 @@ const groundColor = (w: World, x: number, z: number, out: THREE.Color) => {
 // Puffy canopy: four faceted blobs, dark underside to light crown.
 // Smooth normals per blob so the toon ramp paints soft bands instead of noisy facets.
 const crownGeo = () => gradient(mergeGeometries([
-  [0, 0, 0, 1], [0.6, 0.3, 0.25, 0.72], [-0.55, 0.22, -0.3, 0.68], [0.05, 0.62, -0.05, 0.6], [-0.2, -0.1, 0.55, 0.6],
+  [0, 0, 0, 1], [0.6, 0.3, 0.25, 0.72], [-0.55, 0.22, -0.3, 0.68], [0.05, 0.62, -0.05, 0.6],
 ].map(([x, y, z, r]) => new THREE.IcosahedronGeometry(r, 1).translate(x, y, z).toNonIndexed()))!, 0.55, 1.2, false);
 
-function terrain(w: World) {
-  const seg = 260;
-  const g = new THREE.PlaneGeometry(HALF * 2, HALF * 2, seg, seg).rotateX(-Math.PI / 2);
-  const pos = g.attributes.position as THREE.BufferAttribute;
-  const col = new Float32Array(pos.count * 3);
-  const acc = new THREE.Color();
-  const sand = new THREE.Color('#e3cf98'), snow = new THREE.Color('#f4f7fb');
-  const cliff = new THREE.Color('#9a8f80'), cliffDark = new THREE.Color('#6f665e'), dirt = new THREE.Color('#c9a46a');
-  const bx = w.bridgeX, bz = riverZ(w, w.bridgeX);
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i), z = pos.getZ(i);
-    const h = heightAt(w, x, z);
-    pos.setY(i, h);
-    groundColor(w, x, z, acc);
-    // Lighter grass on shelf tops, rock on steep faces.
-    const slope = Math.abs(heightAt(w, x + 0.5, z) - heightAt(w, x - 0.5, z)) + Math.abs(heightAt(w, x, z + 0.5) - heightAt(w, x, z - 0.5));
-    if (h > 8.5) acc.lerp(snow, Math.min(1, (h - 8.5) / 1.2));
-    // Crisp rock bands on risers; gentle slopes stay grassy.
-    if (slope > 1.1) acc.lerp(cliff, Math.min(1, (slope - 1.1) * 3)).lerp(cliffDark, Math.max(0, Math.min(0.45, (slope - 2) * 0.6)));
-    const d = Math.abs(z - riverZ(w, x));
-    if (d < RIVER_HALF + 2.8) acc.lerp(sand, Math.min(1, 1 - Math.max(0, d - RIVER_HALF - 0.6) / 2.2));
-    // Dirt path from the door to the bridge and on across.
-    const pd = Math.min(segDist(x, z, pathStart.x, pathStart.z, bx, bz - RIVER_HALF - 3), segDist(x, z, bx, bz + RIVER_HALF + 3, bx + 6, bz + 22));
-    const wob = Math.sin(x * 1.7) * 0.25 + Math.sin(z * 2.3) * 0.2;
-    if (pd < 1.5 + wob) acc.lerp(dirt, Math.min(1, (1.5 + wob - pd) * 1.5));
-    // Wind ripples on sand.
-    const sandK = biomeWeights(w, x, z).reduce((a, [b, k]) => a + (b === 'DESERT' ? k : 0), 0);
-    if (sandK > 0) acc.multiplyScalar(1 + sandK * 0.07 * Math.sin(x * 0.9 + z * 0.35 + Math.sin(z * 0.2) * 2));
-    const n = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
-    acc.multiplyScalar(0.92 + (n - Math.floor(n)) * 0.12);
-    acc.toArray(col, i * 3);
+// Past the playable square the land keeps going under the mist and swells into soft hills
+// (river valley kept open), so the high camera never finds a hard edge.
+export const OUT = 64;
+const ss = (a: number, b: number, x: number) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+const landHeight = (w: World, x: number, z: number) => {
+  const h = heightAt(w, x, z);
+  const e = Math.max(Math.abs(x), Math.abs(z)) - HALF;
+  if (e <= 0) return h;
+  const d = Math.abs(z - riverZ(w, x));
+  return h + (5 + 4 * Math.sin(x * 0.05 + 1.3) * Math.cos(z * 0.043)) * ss(2, 44, e) * ss(RIVER_HALF + 3, RIVER_HALF + 20, d);
+};
+
+const sand = new THREE.Color('#e3cf98'), snow = new THREE.Color('#f4f7fb'), dirt = new THREE.Color('#c9a46a');
+const cliff = new THREE.Color('#a08f7c'), cliffDark = new THREE.Color('#5f5650'), lip = new THREE.Color('#9fd16a');
+function landColor(w: World, x: number, z: number, h: number, out: THREE.Color) {
+  groundColor(w, x, z, out);
+  const gx = landHeight(w, x + 0.5, z) - landHeight(w, x - 0.5, z), gz = landHeight(w, x, z + 0.5) - landHeight(w, x, z - 0.5);
+  const slope = Math.abs(gx) + Math.abs(gz);
+  const base = heightAt(w, x, z);
+  if (base > 8.5) out.lerp(snow, Math.min(1, (base - 8.5) / 1.2));
+  // Sunlit grass lip right above a drop, then a rock face that darkens toward its foot.
+  const above = landHeight(w, x, z - 1.2) - h;
+  if (slope < 0.9 && h - landHeight(w, x, z + 1.4) > 0.9) out.lerp(lip, 0.35);
+  if (slope > 1.0) {
+    const k = Math.min(1, (slope - 1.0) * 2.5);
+    const strata = 0.9 + 0.12 * Math.sin(h * 5.5 + Math.sin(x * 0.7) * 0.8);
+    out.lerp(tmpB.copy(cliff).multiplyScalar(strata), k).lerp(cliffDark, k * Math.min(0.55, Math.max(0, above * 0.35)));
   }
-  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  g.deleteAttribute('uv');
-  g.computeVertexNormals(); // smooth: soft painted ground; cliffs come from colour + terraces
-  const mesh = new THREE.Mesh(g, toon({ vertexColors: true, rim: 0.12 }));
-  mesh.receiveShadow = true;
-  return mesh;
+  const d = Math.abs(z - riverZ(w, x));
+  if (d < RIVER_HALF + 2.8) out.lerp(sand, Math.min(1, 1 - Math.max(0, d - RIVER_HALF - 0.6) / 2.2));
+  const bx = w.bridgeX, bz = riverZ(w, bx);
+  const pd = Math.min(segDist(x, z, pathStart.x, pathStart.z, bx, bz - RIVER_HALF - 3), segDist(x, z, bx, bz + RIVER_HALF + 3, bx + 6, bz + 22));
+  const wob = Math.sin(x * 1.7) * 0.25 + Math.sin(z * 2.3) * 0.2;
+  if (pd < 1.5 + wob) out.lerp(dirt, Math.min(1, (1.5 + wob - pd) * 1.5));
+  const sandK = biomeWeights(w, x, z).reduce((a, [b, k]) => a + (b === 'DESERT' ? k : 0), 0);
+  if (sandK > 0) out.multiplyScalar(1 + sandK * 0.07 * Math.sin(x * 0.9 + z * 0.35 + Math.sin(z * 0.2) * 2));
+  const n = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
+  return out.multiplyScalar(0.93 + (n - Math.floor(n)) * 0.1);
+}
+
+// Ground as a grid of tiles (frustum culled): 1-unit cells on the map, 5-unit cells past it.
+// Tiles share their border vertices and normals come from the height field, so no seams.
+function terrain(w: World) {
+  const segs: [number, number, number][] = [[-HALF - OUT, -HALF, OUT / 4]];
+  for (let a = -HALF; a < HALF; a += 60) segs.push([a, a + 60, 60]);
+  segs.push([HALF, HALF + OUT, OUT / 4]);
+  const mat = toon({ vertexColors: true, rim: 0.12 });
+  const acc = new THREE.Color();
+  const tiles: THREE.Mesh[] = [];
+  for (const [x0, x1, nx] of segs) for (const [z0, z1, nz] of segs) {
+    const pos: number[] = [], nor: number[] = [], col: number[] = [], idx: number[] = [];
+    for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) {
+      const x = x0 + ((x1 - x0) * i) / nx, z = z0 + ((z1 - z0) * j) / nz;
+      const h = landHeight(w, x, z);
+      pos.push(x, h, z);
+      v.set(landHeight(w, x - 0.5, z) - landHeight(w, x + 0.5, z), 1, landHeight(w, x, z - 0.5) - landHeight(w, x, z + 0.5)).normalize();
+      nor.push(v.x, v.y, v.z);
+      landColor(w, x, z, h, acc);
+      col.push(acc.r, acc.g, acc.b);
+      if (i < nx && j < nz) { const a = j * (nx + 1) + i, b = a + nx + 1; idx.push(a, b, a + 1, b, b + 1, a + 1); }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    g.setIndex(idx);
+    g.computeBoundingSphere();
+    const mesh = new THREE.Mesh(g, mat);
+    mesh.receiveShadow = true;
+    tiles.push(mesh);
+  }
+  return tiles;
 }
 
 function water(w: World) {
   const W = RIVER_HALF + 1.6;
   const pts: number[] = [], uvs: number[] = [], idx: number[] = [];
-  const steps = 200;
+  const steps = 260;
   for (let i = 0; i <= steps; i++) {
-    const x = -HALF + (i / steps) * HALF * 2, z = riverZ(w, x);
+    const x = -HALF - OUT + (i / steps) * (HALF + OUT) * 2, z = riverZ(w, x);
     pts.push(x, WATER_Y, z - W, x, WATER_Y, z + W);
     uvs.push(x, -W, x, W);
     if (i < steps) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
@@ -148,7 +182,7 @@ function water(w: World) {
   g.setIndex(idx);
   const mat = new THREE.ShaderMaterial({
     transparent: true, fog: true,
-    uniforms: { ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog), uTime: U.uTime, uDay: { value: 1 } },
+    uniforms: { ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog), ...U, uTimeF: U.uTime, uDay: { value: 1 }, uSky: { value: new THREE.Color('#bfe3ef') } },
     vertexShader: /* glsl */ `
       #include <fog_pars_vertex>
       varying vec2 vUv; varying vec3 vW;
@@ -162,21 +196,28 @@ function water(w: World) {
       }`,
     fragmentShader: /* glsl */ `
       #include <fog_pars_fragment>
-      uniform float uTime; uniform float uDay;
+      ${MIST_GLSL}
+      uniform float uTime; uniform float uDay; uniform vec3 uSky; uniform vec3 uRim;
       varying vec2 vUv; varying vec3 vW;
       void main() {
         float d = abs(vUv.y);
-        vec3 deep = vec3(0.06, 0.24, 0.40), shallow = vec3(0.18, 0.52, 0.62);
-        vec3 c = mix(deep, shallow, smoothstep(1.0, 4.8, d));
+        vec3 deep = vec3(0.05, 0.22, 0.38), shallow = vec3(0.2, 0.56, 0.62);
+        vec3 c = mix(deep, shallow, smoothstep(0.8, 4.9, d));
+        // Sky sheen on the deep middle, sliding ripple bands and sparkles where the sun catches.
+        c = mix(c, uSky * 0.75, 0.22 * (1.0 - smoothstep(0.0, 4.0, d)));
         float flow = sin(vW.x * 0.9 - uTime * 1.6 + sin(vW.z * 1.3 + uTime) * 1.5) * sin(vW.x * 0.37 + vW.z * 0.8 - uTime * 0.9);
-        c += vec3(0.45, 0.7, 0.8) * smoothstep(0.86, 0.97, flow) * 0.25;
+        c += vec3(0.45, 0.7, 0.8) * smoothstep(0.82, 0.97, flow) * 0.22;
+        float sp = sin(vW.x * 3.1 - uTime * 2.2 + sin(vW.z * 2.7)) * sin(vW.z * 3.7 + uTime * 1.7 + sin(vW.x * 1.9));
+        c += uRim * smoothstep(0.93, 0.99, sp) * 0.7 * uDay;
         float edge = d + sin(vW.x * 2.1 + uTime * 1.3) * 0.12 + sin(vW.x * 5.3 - uTime * 2.0) * 0.06;
         float foam = smoothstep(4.5, 4.65, edge) * (1.0 - smoothstep(5.05, 5.35, edge));
         foam = max(foam, smoothstep(4.05, 4.12, edge) * (1.0 - smoothstep(4.12, 4.22, edge)) * 0.6);
-        c = mix(c, vec3(0.86, 0.93, 0.95), foam);
+        c = mix(c, vec3(0.88, 0.95, 0.96), foam);
         c *= mix(0.35, 1.0, uDay);
-        gl_FragColor = vec4(c, mix(0.82, 0.95, foam));
+        c *= 1.0 - cloudShade(vW.xz) * 0.3;
+        gl_FragColor = vec4(c, mix(0.84, 0.96, foam));
         #include <fog_fragment>
+        gl_FragColor.rgb = mix(gl_FragColor.rgb, uMist, edgeMist(vW));
       }`,
   });
   return new THREE.Mesh(g, mat);
@@ -202,7 +243,7 @@ function bridge(w: World) {
     }
   }
   grp.traverse(o => { o.castShadow = true; o.receiveShadow = true; });
-  const baked = bake(grp);
+  const baked = bakeColors(grp);
   baked.position.set(w.bridgeX, DECK_Y, riverZ(w, w.bridgeX));
   addOutlines(baked, 0.03);
   return baked;
@@ -210,51 +251,89 @@ function bridge(w: World) {
 
 function house() {
   const grp = new THREE.Group();
-  const T = (color: string) => toon({ color, occlude: true, cut: true });
+  const mats = new Map<string, THREE.Material>();
+  const T = (color: string) => mats.get(color) ?? mats.set(color, toon({ color, occlude: true, cut: true })).get(color)!;
   const add = (g: THREE.BufferGeometry, color: string, x: number, y: number, z: number, m?: THREE.Material) => {
     const mesh = new THREE.Mesh(g, m ?? T(color));
     mesh.position.set(x, y, z);
     grp.add(mesh);
     return mesh;
   };
-  add(new THREE.BoxGeometry(HOUSE.w + 0.4, 0.6, HOUSE.d + 0.4), '#9b948a', 0, 0.3, 0); // stone plinth
-  add(new THREE.BoxGeometry(HOUSE.w, 3.8, HOUSE.d), '#f1e2c2', 0, 2.4, 0);
-  for (const x of [-HOUSE.w / 2, HOUSE.w / 2]) for (const z of [-HOUSE.d / 2, HOUSE.d / 2])
+  const W = HOUSE.w, D = HOUSE.d, front = D / 2;
+  add(new THREE.BoxGeometry(W + 0.4, 0.6, D + 0.4), '#9b948a', 0, 0.3, 0); // stone plinth
+  add(new THREE.BoxGeometry(W, 3.8, D), '#f1e2c2', 0, 2.4, 0);
+  for (const x of [-W / 2, W / 2]) for (const z of [-D / 2, D / 2])
     add(new THREE.BoxGeometry(0.35, 3.9, 0.35), '#6b4a2e', x, 2.4, z); // timber corners
-  add(new THREE.BoxGeometry(HOUSE.w + 0.1, 0.25, HOUSE.d + 0.1), '#6b4a2e', 0, 4.25, 0);
-  // Gabled roof: shingle rows on two slopes, ridge beam, gable triangles.
-  const rowMats = [T('#4f6d8f'), T('#5b7a9c')];
-  const slope = HOUSE.d / 2 + 1.2, rows = 5;
-  for (const s of [-1, 1]) {
-    const side = new THREE.Group();
-    side.position.set(0, 6.95, 0);
-    side.rotation.x = s * 0.62;
-    for (let r = 0; r < rows; r++) {
-      const row = new THREE.Mesh(new THREE.BoxGeometry(HOUSE.w + 1.4, 0.22, slope / rows + 0.25), rowMats[r % 2]);
-      row.position.set(0, -0.02 * r, s * ((r + 0.5) * slope / rows));
-      side.add(row);
+  add(new THREE.BoxGeometry(W + 0.1, 0.25, D + 0.1), '#6b4a2e', 0, 4.25, 0);
+  add(new THREE.BoxGeometry(W + 0.05, 0.18, 0.12), '#6b4a2e', 0, 2.0, front + 0.02); // mid rail
+
+  // Pitched roof: staggered courses of clay tiles, each tipped so its lower lip catches the light.
+  const pitch = 0.62, ridgeY = 7.3, slope = front + 1.6, rows = 7, tileW = 0.86;
+  const tile = new THREE.BoxGeometry(tileW - 0.05, 0.13, slope / rows + 0.32);
+  const roofRng = new SeededRandom('roof');
+  const roofMat = toon({ vertexColors: true, occlude: true, cut: true });
+  const tileGeos: THREE.BufferGeometry[] = [];
+  const base = new THREE.Color('#b5563c'), tc = new THREE.Color();
+  for (const sd of [-1, 1]) for (let r = 0; r < rows; r++) {
+    const n = Math.ceil((W + 1.6) / tileW) + 1, off = (r % 2) * tileW * 0.5;
+    for (let k = 0; k < n; k++) {
+      const x = -(W + 1.6) / 2 + k * tileW + off;
+      if (x > (W + 1.6) / 2) continue;
+      const along = (r + 0.5) * (slope / rows);
+      const m = new THREE.Matrix4().makeTranslation(0, ridgeY, 0)
+        .multiply(new THREE.Matrix4().makeRotationX(sd * pitch))
+        .multiply(new THREE.Matrix4().makeTranslation(x, 0.08 - r * 0.012, sd * along))
+        .multiply(new THREE.Matrix4().makeRotationX(sd * -0.11))
+        .multiply(new THREE.Matrix4().makeRotationZ(roofRng.range(-0.025, 0.025)));
+      const g = tile.clone().toNonIndexed().applyMatrix4(m);
+      tc.copy(base).offsetHSL(roofRng.range(-0.006, 0.006), roofRng.range(-0.03, 0.02), roofRng.range(-0.022, 0.022) - r * 0.004);
+      const cols = new Float32Array(g.attributes.position.count * 3);
+      for (let i = 0; i < cols.length; i += 3) tc.toArray(cols, i);
+      g.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+      g.deleteAttribute('uv');
+      tileGeos.push(g);
     }
-    grp.add(side);
   }
-  add(new THREE.BoxGeometry(HOUSE.w + 1.6, 0.3, 0.4), '#3c556f', 0, 7.0, 0); // ridge
-  const gable = new THREE.Shape([new THREE.Vector2(-HOUSE.d / 2, 0), new THREE.Vector2(HOUSE.d / 2, 0), new THREE.Vector2(0, 2.7)]);
-  for (const x of [-HOUSE.w / 2, HOUSE.w / 2]) {
+  const roof = new THREE.Mesh(mergeGeometries(tileGeos)!, roofMat);
+  grp.add(roof);
+  // Under-deck so the gaps between tiles never show the sky, ridge cap and verge boards.
+  for (const sd of [-1, 1]) {
+    const deck = add(new THREE.BoxGeometry(W + 1.5, 0.1, slope), '#7c3a29', 0, 0, 0);
+    deck.position.set(0, ridgeY - Math.cos(pitch) * 0.02, 0);
+    deck.rotation.x = sd * pitch;
+    deck.geometry.translate(0, 0, sd * slope / 2);
+    for (const x of [-(W + 1.7) / 2, (W + 1.7) / 2]) {
+      const verge = add(new THREE.BoxGeometry(0.22, 0.3, slope + 0.1), '#5a3a22', 0, 0, 0);
+      verge.geometry.translate(0, 0.02, sd * (slope / 2 + 0.05));
+      verge.position.set(x, ridgeY, 0);
+      verge.rotation.x = sd * pitch;
+    }
+  }
+  add(new THREE.CylinderGeometry(0.26, 0.26, W + 1.9, 8, 1, false, 0, Math.PI).rotateZ(Math.PI / 2), '#8f3b2a', 0, ridgeY + 0.12, 0);
+  const gable = new THREE.Shape([new THREE.Vector2(-front, 0), new THREE.Vector2(front, 0), new THREE.Vector2(0, ridgeY - 4.3)]);
+  for (const x of [-W / 2, W / 2]) {
     const gm = add(new THREE.ExtrudeGeometry(gable, { depth: 0.2, bevelEnabled: false }), '#e8d6b0', x - 0.1, 4.3, 0);
     gm.rotation.y = Math.PI / 2;
+    add(new THREE.BoxGeometry(0.24, 0.7, 0.7), '#6b4a2e', x + Math.sign(x) * 0.08, 5.6, 0); // gable vent
   }
-  add(new THREE.BoxGeometry(0.9, 2.2, 0.9), '#8f7b6a', 2.8, 6.2, -1.2); // chimney
-  add(new THREE.BoxGeometry(1.8, 2.8, 0.25), '#6b3f22', 0, 1.9, HOUSE.d / 2 + 0.05); // door
-  add(new THREE.SphereGeometry(0.1, 6, 4), '#f3dc8a', 0.6, 1.85, HOUSE.d / 2 + 0.22);
-  add(new THREE.BoxGeometry(2.8, 0.25, 1.3), '#a8a29e', 0, 0.12, HOUSE.d / 2 + 0.75); // step
+  // Stone chimney through the back slope, with a cap.
+  add(new THREE.BoxGeometry(1.1, 3.4, 1.1), '#8f8478', 2.9, 6.75, -1.4);
+  add(new THREE.BoxGeometry(1.35, 0.3, 1.35), '#6f665e', 2.9, 8.55, -1.4);
+  add(new THREE.BoxGeometry(0.7, 0.2, 0.7), '#2a2420', 2.9, 8.71, -1.4);
+  add(new THREE.BoxGeometry(1.8, 2.8, 0.25), '#6b3f22', 0, 1.9, front + 0.05); // door
+  add(new THREE.BoxGeometry(2.2, 0.25, 0.4), '#5a3a22', 0, 3.42, front + 0.12); // lintel
+  add(new THREE.SphereGeometry(0.1, 6, 4), '#f3dc8a', 0.6, 1.85, front + 0.22);
+  add(new THREE.BoxGeometry(2.8, 0.25, 1.3), '#a8a29e', 0, 0.12, front + 0.75); // step
   const glass = toon({ color: '#cfe6f0', emissive: '#ffc766', emissiveIntensity: 0, occlude: true, cut: true });
   for (const x of [-3, 3]) {
-    add(new THREE.BoxGeometry(1.7, 1.5, 0.12), '#6b3f22', x, 2.6, HOUSE.d / 2 + 0.03);
-    add(new THREE.BoxGeometry(1.4, 1.2, 0.14), '', x, 2.6, HOUSE.d / 2 + 0.05, glass);
-    add(new THREE.BoxGeometry(1.9, 0.3, 0.45), '#7a4a26', x, 1.75, HOUSE.d / 2 + 0.2); // flower box
-    for (let k = 0; k < 4; k++) add(new THREE.IcosahedronGeometry(0.16, 0), ['#e11d48', '#facc15', '#f472b6', '#8b5cf6'][k], x - 0.6 + k * 0.4, 2.0, HOUSE.d / 2 + 0.25);
+    add(new THREE.BoxGeometry(1.7, 1.5, 0.12), '#6b3f22', x, 2.6, front + 0.03);
+    add(new THREE.BoxGeometry(1.4, 1.2, 0.14), '', x, 2.6, front + 0.05, glass);
+    add(new THREE.BoxGeometry(0.08, 1.2, 0.18), '#6b3f22', x, 2.6, front + 0.06); // mullion
+    add(new THREE.BoxGeometry(1.9, 0.3, 0.45), '#7a4a26', x, 1.75, front + 0.2); // flower box
+    for (let k = 0; k < 4; k++) add(new THREE.IcosahedronGeometry(0.16, 0), ['#e11d48', '#facc15', '#f472b6', '#8b5cf6'][k], x - 0.6 + k * 0.4, 2.0, front + 0.25);
   }
   grp.traverse(o => { o.castShadow = true; o.receiveShadow = true; });
-  const baked = bake(grp);
+  const baked = bakeColors(grp);
   addOutlines(baked, 0.04, true, true);
   return { grp: baked, glass };
 }
@@ -264,50 +343,87 @@ const FOLIAGE: Partial<Record<Biome, string>> = {
   TUNDRA: '#5a8a78', MOUNTAIN: '#3a6d52', MEADOW: '#66b04c', DESERT: '#7d9a4a',
 };
 
+// Trees in 80-unit chunks: a few extra draw calls, but off-screen canopies (and their shadows) are skipped.
 function trees(w: World, rng: SeededRandom) {
-  const n = w.trees.length;
-  const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.15, 0.26, 1, 6).translate(0, 0.5, 0), toon({ occlude: true }), n);
-  const round = w.trees.filter(t => t.kind !== 'pine');
-  const pine = w.trees.filter(t => t.kind === 'pine');
-  const roundMesh = new THREE.InstancedMesh(crownGeo(), toon({ vertexColors: true, sway: 0.05, occlude: true, rim: 0.5 }), Math.max(1, round.length));
+  const trunks: Inst[] = [], round: Inst[] = [], pine: Inst[] = [];
+  for (const t of w.trees) {
+    const y = heightAt(w, t.x, t.z);
+    const tall = t.kind === 'palm' ? 4 : t.kind === 'pine' ? 1.4 : 1.9;
+    trunks.push(inst(t.x, y - 0.1, t.z, t.s, tall * t.s, t.s, rng.range(0, 6), tmpC.set(t.kind === 'palm' ? '#a07a4f' : '#6e4a2e')));
+    const col = tmpC.set(FOLIAGE[biomeAt(w, t.x, t.z)] ?? (t.kind === 'pine' ? '#3a6d52' : '#4c9a3c')).offsetHSL(rng.range(-0.02, 0.02), 0, rng.range(-0.05, 0.05));
+    if (t.kind === 'pine') pine.push(inst(t.x, y + 0.9 * t.s, t.z, 1.15 * t.s, 3.4 * t.s, 1.15 * t.s, rng.range(0, 6), col));
+    else if (t.kind === 'palm') round.push(inst(t.x, y + 4 * t.s, t.z, 1.5 * t.s, 0.35 * t.s, 1.5 * t.s, rng.range(0, 6), col));
+    else round.push(inst(t.x, y + 2.4 * t.s, t.z, 1.25 * t.s, 1.05 * t.s, 1.25 * t.s, rng.range(0, 6), col));
+  }
   // Pines: two stacked cones.
   const pineGeo = gradient(mergeGeometries([
     new THREE.ConeGeometry(1, 0.6, 7).translate(0, 0.3, 0).toNonIndexed(),
     new THREE.ConeGeometry(0.75, 0.55, 7).translate(0, 0.62, 0).toNonIndexed(),
   ])!, 0.55, 1.15);
-  const pineMesh = new THREE.InstancedMesh(pineGeo, toon({ vertexColors: true, sway: 0.03, occlude: true, rim: 0.45 }), Math.max(1, pine.length));
-  w.trees.forEach((t, i) => {
-    const y = heightAt(w, t.x, t.z) - 0.1;
-    const tall = t.kind === 'palm' ? 4 : t.kind === 'pine' ? 1.4 : 1.9;
-    place(trunk, i, t.x, y, t.z, t.s, tall * t.s, t.s, rng.range(0, 6));
-    trunk.setColorAt(i, tmpC.set(t.kind === 'palm' ? '#a07a4f' : '#6e4a2e'));
-  });
-  round.forEach((t, i) => {
-    const y = heightAt(w, t.x, t.z);
-    const col = tmpC.set(FOLIAGE[biomeAt(w, t.x, t.z)] ?? '#4c9a3c').offsetHSL(rng.range(-0.02, 0.02), 0, rng.range(-0.05, 0.05));
-    if (t.kind === 'palm') place(roundMesh, i, t.x, y + 4 * t.s, t.z, 1.5 * t.s, 0.35 * t.s, 1.5 * t.s, rng.range(0, 6));
-    else place(roundMesh, i, t.x, y + 2.4 * t.s, t.z, 1.25 * t.s, 1.05 * t.s, 1.25 * t.s, rng.range(0, 6));
-    roundMesh.setColorAt(i, col);
-  });
-  pine.forEach((t, i) => {
-    const y = heightAt(w, t.x, t.z);
-    place(pineMesh, i, t.x, y + 0.9 * t.s, t.z, 1.15 * t.s, 3.4 * t.s, 1.15 * t.s, rng.range(0, 6));
-    pineMesh.setColorAt(i, tmpC.set(FOLIAGE[biomeAt(w, t.x, t.z)] ?? '#3a6d52').offsetHSL(0, 0, rng.range(-0.04, 0.04)));
-  });
-  if (!round.length) roundMesh.count = 0;
-  if (!pine.length) pineMesh.count = 0;
-  const out: THREE.Object3D[] = [trunk, roundMesh, pineMesh];
-  for (const m of [trunk, roundMesh, pineMesh]) m.castShadow = m.receiveShadow = true;
-  out.push(hullOf(trunk, 0.05, true));
-  return out;
+  const trunkMeshes = chunked(new THREE.CylinderGeometry(0.15, 0.26, 1, 6).translate(0, 0.5, 0), toon({ occlude: true }), trunks, true, 80);
+  return [
+    ...trunkMeshes, ...trunkMeshes.map(m => hullOf(m, 0.05, true)),
+    ...chunked(crownGeo(), toon({ vertexColors: true, sway: 0.05, occlude: true, rim: 0.5 }), round, true, 80),
+    ...chunked(pineGeo, toon({ vertexColors: true, sway: 0.03, occlude: true, rim: 0.45 }), pine, true, 80),
+    ...farTrees(w),
+  ];
+}
+
+// Low-cost woods past the edge: one merged trunk+crown geometry, no shadows, no outlines.
+const FAR_TREES: Partial<Record<Biome, number>> = {
+  FOREST: 0.6, TROPICAL: 0.45, ENCHANTED: 0.4, SWAMP: 0.35, GRASS: 0.22, MEADOW: 0.12, RIVER: 0.25, TUNDRA: 0.3, MOUNTAIN: 0.35, DESERT: 0.03,
+};
+function farTrees(w: World) {
+  const rng = new SeededRandom(`${w.seed}-far`);
+  const paint = (g: THREE.BufferGeometry, k: number) => {
+    const c = new Float32Array(g.attributes.position.count * 3).fill(k);
+    return g.setAttribute('color', new THREE.BufferAttribute(c, 3));
+  };
+  const crown = crownGeo();
+  crown.deleteAttribute('uv');
+  crown.scale(1.25, 1.05, 1.25).translate(0, 2.4, 0);
+  const trunkG = paint(new THREE.CylinderGeometry(0.15, 0.26, 2, 5).translate(0, 1, 0).toNonIndexed(), 0.35);
+  trunkG.deleteAttribute('uv');
+  const roundGeo = mergeGeometries([trunkG, crown])!;
+  const pineGeo = mergeGeometries([trunkG.clone().scale(1, 0.6, 1), gradient(mergeGeometries([
+    new THREE.ConeGeometry(1.15, 2.2, 6).translate(0, 1.9, 0).toNonIndexed(),
+    new THREE.ConeGeometry(0.85, 1.9, 6).translate(0, 3.0, 0).toNonIndexed(),
+  ])!, 0.55, 1.15)].map(g => { g.deleteAttribute('uv'); return g; }))!;
+  const round: Inst[] = [], pine: Inst[] = [];
+  for (let x = -HALF - OUT + 2; x < HALF + OUT - 2; x += 3.4) for (let z = -HALF - OUT + 2; z < HALF + OUT - 2; z += 3.4) {
+    const jx = x + rng.range(-1.5, 1.5), jz = z + rng.range(-1.5, 1.5);
+    const e = Math.max(Math.abs(jx), Math.abs(jz)) - HALF;
+    if (e < 2.5) continue;
+    const b = biomeAt(w, jx, jz);
+    if (rng.next() > (FAR_TREES[b] ?? 0.2) * (0.6 + 0.6 * ss(0, 20, e)) || Math.abs(jz - riverZ(w, jx)) < RIVER_HALF + 2.5) continue;
+    const s = rng.range(0.9, 1.6);
+    const c = tmpC.set(FOLIAGE[b] ?? '#4c9a3c').offsetHSL(rng.range(-0.02, 0.02), 0, rng.range(-0.06, 0.04));
+    (b === 'TUNDRA' || b === 'MOUNTAIN' ? pine : round).push(inst(jx, landHeight(w, jx, jz) - 0.2, jz, s, s * rng.range(0.9, 1.2), s, rng.range(0, 6), c));
+  }
+  const mat = toon({ vertexColors: true, sway: 0.03, rim: 0.4 });
+  return [...chunked(roundGeo, mat, round), ...chunked(pineGeo, mat, pine)];
+}
+
+// Boulder: a lumpy, flat-bottomed icosahedron, flat shaded, darker at the foot.
+function rockGeo(seed: number, tall = 1, detail = 1) {
+  const g = new THREE.IcosahedronGeometry(1, detail);
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i);
+    const h = Math.sin(v.x * 4.1 + seed) * Math.sin(v.y * 3.7 - seed * 0.7) * Math.sin(v.z * 4.3 + seed * 1.3);
+    v.multiplyScalar(0.84 + 0.3 * h);
+    v.y = v.y < -0.2 ? -0.2 - (v.y + 0.2) * 0.15 : v.y > 0.55 ? 0.55 + (v.y - 0.55) * 0.35 : v.y;
+    p.setXYZ(i, v.x, v.y * tall, v.z);
+  }
+  return gradient(g, 0.62, 1.18);
 }
 
 function rocks(w: World, rng: SeededRandom) {
-  const mesh = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 0), toon({ occlude: true, rim: 0.3 }), Math.max(1, w.rocks.length));
+  const mesh = new THREE.InstancedMesh(rockGeo(1.7), toon({ vertexColors: true, occlude: true, rim: 0.3 }), Math.max(1, w.rocks.length));
   w.rocks.forEach((r, i) => {
-    place(mesh, i, r.x, heightAt(w, r.x, r.z) + 0.2 * r.s, r.z, r.s, 0.7 * r.s, 0.9 * r.s, rng.range(0, 6));
+    place(mesh, i, r.x, heightAt(w, r.x, r.z) + 0.12 * r.s, r.z, r.s, 0.85 * r.s, 0.9 * r.s, rng.range(0, 6));
     const b = biomeAt(w, r.x, r.z);
-    mesh.setColorAt(i, tmpC.set(b === 'DESERT' ? '#c49a6c' : b === 'TUNDRA' ? '#b9c3c9' : '#948f86').offsetHSL(0, 0, rng.range(-0.06, 0.06)));
+    mesh.setColorAt(i, tmpC.set(b === 'DESERT' ? '#c99f70' : b === 'TUNDRA' ? '#b9c3c9' : b === 'ENCHANTED' ? '#9a92b8' : '#9c968c').offsetHSL(0, 0, rng.range(-0.06, 0.06)));
   });
   mesh.count = w.rocks.length;
   mesh.castShadow = mesh.receiveShadow = true;
@@ -334,8 +450,9 @@ const GRASS_DENSITY: Partial<Record<Biome, number>> = { DESERT: 0.12, TUNDRA: 0.
 function grass(w: World, rng: SeededRandom) {
   const max = 22000;
   // A tuft = five leaning blades, dark at the root and sunlit at the tip.
-  const blades = [0, 1.3, 2.5, 3.8, 5.0].map((a, i) =>
-    new THREE.ConeGeometry(0.07, 0.42 + (i % 2) * 0.16, 3, 1, true).translate(0.06, 0.22, 0).rotateZ(0.32).rotateY(a).toNonIndexed());
+  const blade = (h: number) => new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([
+    -0.07, 0, 0, 0, 0, 0.04, 0.12, h, 0, 0, 0, 0.04, 0.07, 0, 0, 0.12, h, 0], 3));
+  const blades = [0, 1.3, 2.5, 3.8, 5.0].map((a, i) => blade(0.44 + (i % 2) * 0.16).translate(0.06, 0, 0).rotateY(a));
   const geo = gradient(mergeGeometries(blades)!, 0.72, 1.3);
   const list: Inst[] = [];
   let n = 0;
@@ -360,21 +477,20 @@ function grass(w: World, rng: SeededRandom) {
 }
 let clumpX = 0, clumpZ = 0;
 
-// Rock chunks along terrace risers so ledges read as stone cliffs.
+// Stone slabs packed along terrace risers, turned to face down-slope, so drops read as cliffs.
 function ledges(w: World, rng: SeededRandom) {
   const list: Inst[] = [];
-  for (let x = -HALF + 2; x < HALF - 2; x += 1.5) for (let z = -HALF + 2; z < HALF - 2; z += 1.5) {
-    const jx = x + rng.range(-0.6, 0.6), jz = z + rng.range(-0.6, 0.6);
-    const h = heightAt(w, jx, jz);
+  for (let x = -HALF + 2; x < HALF - 2; x += 1.1) for (let z = -HALF + 2; z < HALF - 2; z += 1.1) {
+    const jx = x + rng.range(-0.45, 0.45), jz = z + rng.range(-0.45, 0.45);
     const gx = heightAt(w, jx + 0.4, jz) - heightAt(w, jx - 0.4, jz), gz = heightAt(w, jx, jz + 0.4) - heightAt(w, jx, jz - 0.4);
     const slope = Math.hypot(gx, gz) / 0.8;
-    if (slope < 1.4 || rng.next() > 0.7) continue;
-    const s = rng.range(0.55, 0.95);
+    if (slope < 1.5 || rng.next() > 0.8) continue;
+    const s = rng.range(0.6, 0.95);
     const b = biomeAt(w, jx, jz);
-    list.push(inst(jx, h - 0.25, jz, s * 1.2, s * 1.1, s, rng.range(0, 6), tmpC.set(b === 'TUNDRA' ? '#aab4ba' : b === 'ENCHANTED' ? '#8c84a8' : '#8f877c').offsetHSL(0, 0, rng.range(-0.06, 0.05))));
+    const c = tmpC.set(b === 'TUNDRA' ? '#aab4ba' : b === 'ENCHANTED' ? '#8c84a8' : b === 'DESERT' ? '#c4976a' : '#968b7e').offsetHSL(0, 0, rng.range(-0.07, 0.05));
+    list.push(inst(jx, heightAt(w, jx, jz) - 0.55, jz, s * 1.25, s * rng.range(1.1, 1.6), s * 0.8, Math.atan2(gx, gz) + rng.range(-0.3, 0.3), c));
   }
-  const mesh = chunked(new THREE.DodecahedronGeometry(1, 0), toon({ occlude: true, rim: 0.3 }), list, true);
-  return mesh;
+  return chunked(rockGeo(4.2, 1.2, 0), toon({ vertexColors: true, occlude: true, rim: 0.3 }), list, true);
 }
 
 // Desert cacti (decoration only, flowerless so they don't read as pickable).
@@ -437,7 +553,9 @@ function bushes(w: World, rng: SeededRandom) {
     list.push(inst(x, heightAt(w, x, z) + 0.35 * s, z, s * 1.2, s * 0.85, s * 1.2, rng.range(0, 6), tmpC.set(FOLIAGE[b] ?? '#4f9a42').offsetHSL(0.01, -0.05, rng.range(-0.08, 0))));
     n++;
   }
-  return chunked(crownGeo(), toon({ vertexColors: true, sway: 0.04, occlude: true, rim: 0.45 }), list, true);
+  const bushGeo = gradient(mergeGeometries([[0, 0, 0, 1], [0.55, 0.15, 0.2, 0.7], [-0.5, 0.1, -0.25, 0.65]]
+    .map(([x, y, z, r]) => new THREE.IcosahedronGeometry(r, 1).translate(x, y, z).toNonIndexed()))!, 0.55, 1.2, false);
+  return chunked(bushGeo, toon({ vertexColors: true, sway: 0.04, occlude: true, rim: 0.45 }), list, true);
 }
 
 // All flowers in one BatchedMesh: one draw call (plus shadow) for every type on the map.
@@ -584,33 +702,6 @@ function pickupFx(scene: THREE.Scene) {
   return { highlight, pick, update };
 }
 
-// The world never ends in a void: a wide ground skirt and a ring of misty hills past the edge.
-function horizon(rng: SeededRandom) {
-  const grp = new THREE.Group();
-  // Ground outside the map only (a square hole over the playable area).
-  const outer = new THREE.Shape([new THREE.Vector2(-700, -700), new THREE.Vector2(700, -700), new THREE.Vector2(700, 700), new THREE.Vector2(-700, 700)]);
-  const e = HALF - 0.5;
-  outer.holes.push(new THREE.Path([new THREE.Vector2(-e, -e), new THREE.Vector2(-e, e), new THREE.Vector2(e, e), new THREE.Vector2(e, -e)]));
-  const skirt = new THREE.Mesh(new THREE.ShapeGeometry(outer).rotateX(-Math.PI / 2), toon({ color: '#3a8a58', rim: 0 }));
-  skirt.position.y = -0.3;
-  grp.add(skirt);
-  const hillGeo = new THREE.IcosahedronGeometry(1, 1);
-  const list: { x: number; z: number; s: number; h: number }[] = [];
-  for (let i = 0; i < 90; i++) {
-    const side = i % 4, t = rng.range(-1.25, 1.25) * (HALF + 30), off = HALF + rng.range(6, 55);
-    const [x, z] = side === 0 ? [t, -off] : side === 1 ? [t, off] : side === 2 ? [-off, t] : [off, t];
-    list.push({ x, z, s: rng.range(14, 34), h: rng.range(6, 22) });
-  }
-  const hills = new THREE.InstancedMesh(hillGeo, toon({ rim: 0.25 }), list.length);
-  list.forEach((hl, i) => {
-    place(hills, i, hl.x, -2, hl.z, hl.s, hl.h, hl.s * rng.range(0.7, 1.2), rng.range(0, 6));
-    hills.setColorAt(i, tmpC.set(i % 3 ? '#3f8f5f' : '#2f7a63').offsetHSL(0, 0, rng.range(-0.05, 0.04)));
-  });
-  hills.computeBoundingSphere();
-  grp.add(hills);
-  return grp;
-}
-
 // Sky colour keyframes over the 0..1 day.
 const SKY: [number, string][] = [
   [0, '#141b36'], [0.2, '#26325e'], [0.25, '#f2b08e'], [0.32, '#bfe3ef'], [0.64, '#bfe3ef'],
@@ -637,7 +728,7 @@ export function buildOutdoor(w: World) {
   const sun = new THREE.DirectionalLight('#ffe2b0', 2.4);
   sun.castShadow = true;
   sun.shadow.mapSize.set(1024, 1024);
-  Object.assign(sun.shadow.camera, { left: -36, right: 36, top: 36, bottom: -36, near: 1, far: 160 });
+  Object.assign(sun.shadow.camera, { left: -30, right: 30, top: 30, bottom: -30, near: 1, far: 140 });
   sun.shadow.bias = -0.0005;
   sun.shadow.normalBias = 0.25;
   scene.add(hemi, sun, sun.target);
@@ -655,12 +746,18 @@ export function buildOutdoor(w: World) {
     w.landmarks.some(l => Math.hypot(l.x - x, l.z - z) < l.r + 2) ||
     w.flowers.some(f => Math.abs(f.x - x) < 1.4 && Math.abs(f.z - z) < 1.4) ||
     w.trees.some(t => Math.abs(t.x - x) < 1.6 && Math.abs(t.z - z) < 1.6);
-  scene.add(terrain(w), water0, bridge(w), houseGrp, ...trees(w, rng), ...rocks(w, rng), stones(w, rng), ...grassMeshes, ...sprinkleMeshes,
-    ...bushes(w, rng), ...cacti(w, rng), ...ledges(w, rng), ...decorInstances(w, rng, busy), ...fl.meshes, parts, horizon(rng));
+  scene.add(...terrain(w), water0, bridge(w), houseGrp, ...trees(w, rng), ...rocks(w, rng), stones(w, rng), ...grassMeshes, ...sprinkleMeshes,
+    ...bushes(w, rng), ...cacti(w, rng), ...ledges(w, rng), ...decorInstances(w, rng, busy), ...fl.meshes, parts);
+  // Edge mist + cloud shadows only while this scene renders (the interior shares the materials).
+  scene.onBeforeRender = () => { U.uEdge.value = HALF; U.uCloud.value = cloud; };
+  scene.onAfterRender = () => { U.uEdge.value = 1e5; U.uCloud.value = 0; };
+  let cloud = 0;
   const props = buildProps(w, scene);
   const fx = pickupFx(scene);
 
   const skyCol = new THREE.Color(), mist = new THREE.Color();
+  const lastCell = { x: 1e9, z: 0 };
+  let lastBiome: Biome = 'GRASS';
   const light = { day: 1, golden: 0 };
   const setTime = (t: number, focus: THREE.Vector3, time = 0) => {
     skyAt(t, skyCol);
@@ -669,10 +766,16 @@ export function buildOutdoor(w: World) {
     const day = Math.max(0, Math.min(1, elev * 3 + 0.3));
     const golden = day * Math.max(0, 1 - Math.abs(elev - 0.12) * 3.5); // low sun, still up
     // Fog/sky: time of day tinted by the biome Werka stands in.
-    mist.set(MIST[biomeAt(w, focus.x, focus.z)]);
+    const cx = Math.round(focus.x / 4), cz = Math.round(focus.z / 4);
+    if (cx !== lastCell.x || cz !== lastCell.z) { lastCell.x = cx; lastCell.z = cz; lastBiome = biomeAt(w, focus.x, focus.z); }
+    mist.set(MIST[lastBiome]);
     skyCol.lerp(mist, 0.45 * day);
     (scene.background as THREE.Color).copy(skyCol);
     scene.fog!.color.lerp(skyCol, 0.08); // ease between biomes
+    // Edge mist: the fog colour, a touch paler by day so the world evaporates into light.
+    U.uMist.value.copy(scene.fog!.color).lerp(tmpB.set('#ffffff'), 0.18 * day);
+    (water0.material as THREE.ShaderMaterial).uniforms.uSky.value.copy(skyCol);
+    cloud = 0.9 * day;
     const dir = elev > -0.05 ? 1 : -1;
     // Keep the sun low-ish and to the side so shadows are long and readable from above.
     sun.position.set(focus.x + Math.cos(ang) * 40 * dir - 14, focus.y + 30 + Math.abs(elev) * 30, focus.z + 26);

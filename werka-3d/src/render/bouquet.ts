@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { flowerGeometry } from './flowers.ts';
 import { toon, addOutlines } from './toon.ts';
+import { pickupGeometry, pickupMat } from './pickups.ts';
 
 const h = (i: number, salt: number) => {
   const s = Math.sin(i * 127.1 + salt * 311.7) * 43758.5453;
@@ -12,7 +13,8 @@ const h = (i: number, salt: number) => {
 const TIE = -0.15; // where stems meet, at the ribbon
 const flowerMat = toon({ vertexColors: true, side: THREE.DoubleSide, rim: 0.4 });
 
-export function buildBouquet(types: string[]) {
+// extras: pocket items pinned on the paper wrap (a ribbon is tied at the stems instead).
+export function buildBouquet(types: string[], extras: string[] = []) {
   const grp = new THREE.Group();
   const n = Math.max(types.length, 1);
   types.forEach((type, i) => {
@@ -51,6 +53,19 @@ export function buildBouquet(types: string[]) {
     leaf.rotation.set(-0.5, (k / 7) * Math.PI * 2, 0, 'YXZ');
     grp.add(leaf);
   }
+  extras.forEach((id, i) => {
+    const m = new THREE.Mesh(pickupGeometry(id), pickupMat);
+    if (id === 'ribbon') { m.position.set(0, TIE - 0.02, 0.36); m.scale.setScalar(0.85); }
+    else {
+      // On the cone's surface, left/right of centre; wrap radius grows from 0 at the tip (y -0.65) to 0.75 (y 0.85).
+      const a = (extras.length === 1 ? 0 : i ? 0.5 : -0.5), y = 0.36, r = (0.75 * (y + 0.65)) / 1.5 + 0.05;
+      m.position.set(Math.sin(a) * r, y, Math.cos(a) * r);
+      m.rotation.set(-0.45, a, 0, 'YXZ');
+      m.scale.setScalar(0.8);
+    }
+    addOutlines(m, 0.03);
+    grp.add(m);
+  });
   grp.traverse(o => { o.castShadow = true; });
   return grp;
 }

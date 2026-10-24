@@ -2,10 +2,11 @@
 // then remembered in werka3d_quality (the title screen button cycles it by hand).
 export type Quality = 'low' | 'med' | 'high';
 
-export const PRESETS: Record<Quality, { pr: number; shadow: number; post: boolean; msaa: number; grass: number }> = {
-  low: { pr: 1, shadow: 512, post: false, msaa: 0, grass: 0.4 },
-  med: { pr: 1.5, shadow: 1024, post: true, msaa: 0, grass: 0.7 },
-  high: { pr: 2, shadow: 2048, post: true, msaa: 4, grass: 1 },
+// Low still gets the colour grade + vignette (one cheap full-screen pass), just no bloom or tilt blur.
+export const PRESETS: Record<Quality, { pr: number; shadow: number; post: boolean; bloom: boolean; msaa: number; grass: number }> = {
+  low: { pr: 1, shadow: 512, post: true, bloom: false, msaa: 0, grass: 0.45 },
+  med: { pr: 1.5, shadow: 1024, post: true, bloom: true, msaa: 0, grass: 0.7 },
+  high: { pr: 2, shadow: 2048, post: true, bloom: true, msaa: 4, grass: 1 },
 };
 
 const KEY = 'werka3d_quality';

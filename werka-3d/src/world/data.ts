@@ -53,3 +53,38 @@ export const BIOME_FLOWERS: Record<Biome, { types: string[]; density: number }> 
 
 export const timeLabel = (t: number) =>
   t < 0.2 || t > 0.85 ? 'NIGHT' : t < 0.3 ? 'DAWN' : t < 0.7 ? 'DAY' : 'DUSK';
+
+// Trinkets (spec v3, shared with 2D): pocket items found once per day, favouring some biomes.
+export const MAX_POCKET = 8;
+export const MAX_EXTRAS = 2; // pocket items a bouquet can carry
+export type Trinket = { id: string; name: string; emoji: string; color: string; biomes: Biome[]; rare?: boolean };
+export const TRINKETS: Trinket[] = [
+  { id: 'ribbon', name: 'Silk Ribbon', emoji: '🎀', color: '#f472b6', biomes: ['GRASS', 'MEADOW'] },
+  { id: 'button', name: 'Lost Button', emoji: '🔘', color: '#94a3b8', biomes: ['GRASS', 'RIVER'] },
+  { id: 'shell', name: 'Seashell', emoji: '🐚', color: '#fcd5ce', biomes: ['RIVER', 'TROPICAL', 'SWAMP'] },
+  { id: 'marble', name: 'Glass Marble', emoji: '🔮', color: '#818cf8', biomes: ['DESERT', 'ENCHANTED'] },
+  { id: 'feather', name: 'Blue Feather', emoji: '🪶', color: '#38bdf8', biomes: ['FOREST', 'MOUNTAIN'] },
+  { id: 'key', name: 'Old Key', emoji: '🗝️', color: '#d4a017', biomes: ['FOREST', 'DESERT'] },
+  { id: 'ring', name: 'Tin Ring', emoji: '💍', color: '#e5e7eb', biomes: ['RIVER', 'SWAMP'] },
+  { id: 'acorn', name: 'Lucky Acorn', emoji: '🌰', color: '#a16207', biomes: ['FOREST', 'MEADOW'] },
+  { id: 'pebble', name: 'Heart Pebble', emoji: '🪨', color: '#a8a29e', biomes: ['MOUNTAIN', 'TUNDRA'] },
+  { id: 'butterfly', name: 'Butterfly Charm', emoji: '🦋', color: '#a78bfa', biomes: ['ENCHANTED', 'TROPICAL'] },
+  { id: 'star', name: 'Fallen Star', emoji: '⭐', color: '#fde047', biomes: ['ENCHANTED', 'TUNDRA'], rare: true },
+];
+// Every pocket item id (trinkets + kisses) -> display info.
+export const POCKET_INFO: Record<string, { name: string; emoji: string; color: string }> = {
+  ...Object.fromEntries(TRINKETS.map(t => [t.id, t])),
+  kiss: { name: "Elio's Kiss", emoji: '💋', color: '#f9a8d4' },
+  golden_kiss: { name: "Elio's Golden Kiss", emoji: '💖', color: '#f5c542' },
+};
+
+export const ELIO_LINES = [
+  'I was hiding behind this tree all morning.',
+  "Werka! I knew you'd come this way.",
+  "Shh, don't tell the flowers I'm here.",
+  'I counted every petal on the way. I lost count at you.',
+  'The wind told me you were close.',
+  "I've been practising my hiding. Clearly not enough!",
+  "This is my favourite spot. Now it's ours.",
+  'You walked right past me once. I almost laughed.',
+];

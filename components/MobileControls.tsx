@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { POCKET_INFO } from '../constants';
 
 interface MobileControlsProps {
   keys: React.MutableRefObject<Set<string>>;
@@ -33,11 +34,12 @@ export const useIsLandscape = () => {
 
 const RADIUS = 56; // joystick travel in px
 const DEAD = 0.3; // fraction of RADIUS ignored
+const RUN = 0.85; // fraction of RADIUS past which Werka runs
 
-const ICONS: Record<string, string> = { Pick: '🌼', Enter: '🚪', Craft: '💐', Exit: '🚪' };
+const ICONS: Record<string, string> = { Pick: '🌼', Enter: '🚪', Craft: '💐', Exit: '🚪', Talk: '💬', Next: '▶️' };
 
 // Floating joystick: touch anywhere on the left zone, the stick appears under the thumb.
-// Writes arrow keys into the game's key set, so desktop and touch share one input path.
+// Writes arrow keys (and a 'Run' pseudo-key) into the game's key set, so desktop and touch share one input path.
 export const MobileControls: React.FC<MobileControlsProps> = ({ keys, prompt, onAction }) => {
   const overlay = useIsLandscape();
   const [stick, setStick] = useState<{ ox: number; oy: number; dx: number; dy: number } | null>(null);
@@ -51,6 +53,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({ keys, prompt, on
     set('ArrowRight', dx > t);
     set('ArrowUp', dy < -t);
     set('ArrowDown', dy > t);
+    set('Run', Math.hypot(dx, dy) > RADIUS * RUN);
   };
 
   const release = () => {
@@ -71,11 +74,14 @@ export const MobileControls: React.FC<MobileControlsProps> = ({ keys, prompt, on
   const rect = () => zone.current!.getBoundingClientRect();
   const verb = prompt?.replace('Press E to ', '').split(' ')[0] ?? '';
   const rest = prompt?.replace('Press E to ', '').split(' ').slice(1).join(' ');
+  const pickUp = prompt?.match(/Pick up (.+)/)?.[1];
+  const icon = pickUp ? Object.values(POCKET_INFO).find(i => i.name === pickUp)?.emoji ?? '✨' : ICONS[verb] ?? '✋';
+  const running = !!stick && Math.hypot(stick.dx, stick.dy) > RADIUS * RUN;
 
   return (
     <div className={overlay
       ? 'absolute inset-0 z-30 flex select-none pointer-events-none'
-      : 'flex-shrink-0 h-[34dvh] min-h-44 bg-stone-800 border-t-2 border-stone-600 flex select-none'}
+      : 'flex-none h-[27dvh] min-h-36 bg-stone-800 border-t-2 border-stone-600 flex select-none'}
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
       {/* Joystick zone */}
       <div
@@ -94,10 +100,14 @@ export const MobileControls: React.FC<MobileControlsProps> = ({ keys, prompt, on
       >
         {!stick && (overlay
           ? <div className="absolute left-10 bottom-10 w-28 h-28 rounded-full border-4 border-white/20 bg-white/5 pointer-events-none" />
-          : <div className="absolute inset-0 flex items-center justify-center text-stone-500 text-xs pixel-text pointer-events-none">TOUCH TO MOVE</div>)}
+          : <div className="absolute inset-0 flex flex-col gap-2 items-center justify-center text-stone-500 pointer-events-none text-center px-2">
+              <span className="text-xs pixel-text">TOUCH TO MOVE</span>
+              <span className="text-sm font-mono">push the stick all the way to run</span>
+            </div>)}
         {stick && (
           <div className="fixed pointer-events-none" style={{ left: stick.ox - RADIUS, top: stick.oy - RADIUS, width: RADIUS * 2, height: RADIUS * 2 }}>
-            <div className="absolute inset-0 rounded-full border-4 border-white/30 bg-white/10" />
+            <div className={`absolute inset-0 rounded-full border-4 transition-colors ${running ? 'border-yellow-300 bg-yellow-200/25 shadow-[0_0_18px_rgba(253,224,71,0.6)]' : 'border-white/30 bg-white/10'}`} />
+            {running && <div className="absolute -top-7 inset-x-0 text-center pixel-text text-[10px] text-yellow-300 drop-shadow">RUN</div>}
             <div className="absolute w-14 h-14 rounded-full bg-white/70 border-2 border-white shadow-lg"
               style={{ left: RADIUS - 28 + stick.dx, top: RADIUS - 28 + stick.dy }} />
           </div>
@@ -113,7 +123,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({ keys, prompt, on
             ${prompt ? 'bg-yellow-500 border-yellow-300 active:scale-95 animate-pulse' : 'bg-stone-700 border-stone-600 opacity-60'}`}
           aria-label={prompt ?? 'No action available'}
         >
-          <span className="text-3xl leading-none">{prompt ? ICONS[verb] ?? '✋' : '·'}</span>
+          <span className="text-3xl leading-none">{prompt ? icon : '·'}</span>
           <span className="pixel-text text-[10px] text-white mt-1 uppercase">{prompt ? verb : ''}</span>
         </button>
         <span className="text-[11px] text-amber-100/80 font-mono h-4 text-center px-1 truncate max-w-full">{rest}</span>

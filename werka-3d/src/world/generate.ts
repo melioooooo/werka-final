@@ -1,6 +1,6 @@
 // Pure world generation: no three.js, no DOM. Same seed string => same World.
 import { SeededRandom } from './rng.ts';
-import { ALL_BIOMES, BIOME_FLOWERS, FLOWER_COLORS, type Biome } from './data.ts';
+import { ALL_BIOMES, BIOME_FLOWERS, FLOWER_COLORS, TRINKETS, ELIO_LINES, type Biome } from './data.ts';
 
 export const REGION = 80; // one region ~ one 2D screen
 export const HALF = (REGION * 3) / 2; // map spans [-HALF, HALF] on x and z
@@ -13,6 +13,11 @@ export const SPAWN = { x: 0, z: 8 };
 export type Tree = { x: number; z: number; s: number; kind: 'round' | 'pine' | 'palm' };
 export type Rock = { x: number; z: number; s: number };
 export type FlowerSpot = { id: string; type: string; color: string; x: number; z: number };
+export type Pickup = { id: string; type: string; x: number; z: number }; // id 't:n' trinket / 'k:n' kiss
+// Elio hides at (x, z), peeks out toward side `peek` (+-1) and steps out to (ox, oz) when Werka comes close.
+export type Elio = { x: number; z: number; ox: number; oz: number; face: number; peek: number; line: string };
+// Soft map edge: Werka slows from EDGE.slow units before the border and stops at EDGE.stop.
+export const EDGE = { slow: 16, stop: 4 };
 
 export type World = {
   seed: string;
@@ -24,6 +29,9 @@ export type World = {
   flowers: FlowerSpot[];
   ponds: Pond[]; // still water for lotus / water lilies
   landmarks: Landmark[]; // one signature prop per outer region
+  trinkets: Pickup[];
+  kisses: Pickup[];
+  elio: Elio;
 };
 export type Pond = { x: number; z: number; r: number };
 export type Landmark = { x: number; z: number; r: number; kind: Biome };
@@ -140,6 +148,7 @@ export function generateWorld(seed: string): World {
     riverPhase: rng.range(0, 200),
     bridgeX: rng.range(-25, 25),
     trees: [], rocks: [], flowers: [], ponds: [], landmarks: [],
+    trinkets: [], kisses: [], elio: { x: 0, z: 0, ox: 0, oz: 0, face: 0, peek: 1, line: '' },
   };
 
   const doorZ = HOUSE.door.z;
@@ -224,7 +233,59 @@ export function generateWorld(seed: string): World {
     reach[cell(shore(f).z) * GRID + cell(shore(f).x)] === 1 &&
     !w.trees.some(t => Math.hypot(t.x - f.x, t.z - f.z) < 0.6 * t.s + 0.5) &&
     !w.rocks.some(r => Math.hypot(r.x - f.x, r.z - f.z) < r.s + 0.4));
+  placeExtras(w, (x, z) => reach[cell(z) * GRID + cell(x)] === 1);
   return w;
+}
+
+// Elio, trinkets and kisses: their own RNG stream, so flowers and trees for a date never move.
+function placeExtras(w: World, reach: (x: number, z: number) => boolean) {
+  const rng = new SeededRandom(`${w.seed}-pickups`);
+  const lim = HALF - EDGE.slow;
+  const free = (x: number, z: number, r: number) =>
+    Math.abs(x) < lim && Math.abs(z) < lim && Math.hypot(x, z) > 14 && reach(x, z) && !blocked(w, x, z, r) &&
+    !inWater(w, x, z) && !w.ponds.some(p => Math.hypot(x - p.x, z - p.z) < p.r + 1.5);
+
+  // Elio hides on the far (uphill, -z) side of a tree or rock, so the cover sits between him and the camera.
+  const far = HALF * 2 * 0.3 + 5; // ~30% of the map width from the spawn, with room for the hiding offset
+  const cover = [...w.trees.map(t => ({ x: t.x, z: t.z, r: 0.45 * t.s })), ...w.rocks.map(k => ({ x: k.x, z: k.z, r: 0.8 * k.s })),
+    ...w.landmarks].filter(c => Math.hypot(c.x - SPAWN.x, c.z - SPAWN.z) > far);
+  for (let t = 0; t < 400; t++) {
+    const c = cover[Math.floor(rng.next() * cover.length)];
+    const a = -Math.PI / 2 + rng.range(-0.7, 0.7), d = c.r + 1.1; // behind, slightly to one side
+    const x = c.x + Math.cos(a) * d, z = c.z + Math.sin(a) * d;
+    if (!free(x, z, 0.6)) continue;
+    // Step-out spot clear of the canopy, on the side he faces first.
+    const side = Math.cos(a) < 0 ? -1 : 1;
+    const out = [side, -side].flatMap(sd => [3, 2.5].map(k => ({ sd, x: x + sd * k, z: z + 0.8 })))
+      .find(o => free(o.x, o.z, 0.6) && !steep(w, x, z, o.x, o.z));
+    if (!out) continue;
+    w.elio = { x, z, ox: out.x, oz: out.z, face: Math.atan2(SPAWN.x - x, SPAWN.z - z), peek: out.sd, line: rng.choice(ELIO_LINES) };
+    break;
+  }
+
+  const taken: { x: number; z: number }[] = [w.elio, ...w.flowers];
+  const spot = (gap: number) => {
+    for (let t = 0; t < 200; t++) {
+      const x = rng.range(-lim, lim), z = rng.range(-lim, lim);
+      if (!free(x, z, 0.5) || taken.some(o => Math.hypot(o.x - x, o.z - z) < (o === w.elio ? 4 : 1.2))) continue;
+      if (w.trinkets.concat(w.kisses).some(o => Math.hypot(o.x - x, o.z - z) < gap)) continue;
+      return { x, z };
+    }
+    return null;
+  };
+  const nT = 6 + Math.floor(rng.next() * 4), nK = 3 + Math.floor(rng.next() * 3);
+  for (let i = 0; i < nT; i++) {
+    const p = spot(18);
+    if (!p) continue;
+    const b = biomeAt(w, p.x, p.z);
+    const fav = TRINKETS.filter(t => t.biomes.includes(b) && (!t.rare || rng.next() < 0.35));
+    const type = (fav.length && rng.next() < 0.8 ? rng.choice(fav) : rng.choice(TRINKETS.filter(t => !t.rare))).id;
+    w.trinkets.push({ id: `t:${i}`, type, ...p });
+  }
+  for (let i = 0; i < nK; i++) {
+    const p = spot(14);
+    if (p) w.kisses.push({ id: `k:${i}`, type: 'kiss', ...p });
+  }
 }
 
 // Collision for a walker of radius r. Bridge is the only way across the water.

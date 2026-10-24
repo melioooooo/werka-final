@@ -1,12 +1,15 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { SoundManager } from '../utils/SoundManager';
 import { Flower, Player } from '../types';
-import { CANVAS_WIDTH, CANVAS_HEIGHT, PLAYER_SPEED, PLAYER_SPRITES, SPRITE_SIZE, SPRITE_SCALE, SPRITE_COUNTS, ANIMATION_SPEED } from '../constants';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, PLAYER_SPEED, PLAYER_SPRITES, SPRITE_SIZE, SPRITE_SCALE, SPRITE_COUNTS, ANIMATION_SPEED, RUN_MULT } from '../constants';
 import { InventoryHUD } from './InventoryHUD';
-import { MobileControls, useIsTouch } from './MobileControls';
+import { MobileControls, useIsTouch, useIsLandscape } from './MobileControls';
+import { newCamera, makeScene, blitCamera } from '../utils/camera';
 
 interface HouseInteriorProps {
     inventory: Flower[];
+    pocket: string[];
+    kisses: number;
     onExit: () => void;
     onCraft: () => void;
 }
@@ -39,23 +42,27 @@ const FURNITURE_COLLISIONS = [
 const DOOR_RECT = { x: 470, y: 650, width: 85, height: 50 };
 const CRAFTING_TABLE_RECT = { x: 550, y: 360, width: 90, height: 80 }; // Armchair as crafting spot? Or the table?
 
-export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, onExit, onCraft }) => {
+export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, pocket, kisses, onExit, onCraft }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const touch = useIsTouch();
+    const landscape = useIsLandscape();
+    const touchRef = useRef(touch);
+    touchRef.current = touch;
+    const sceneRef = useRef<HTMLCanvasElement | null>(null);
+    const camRef = useRef(newCamera());
     const backgroundImageRef = useRef<HTMLImageElement | null>(null);
     const spriteImagesRef = useRef<{ [key: string]: HTMLImageElement }>({});
     const [areSpritesLoaded, setAreSpritesLoaded] = useState(false);
     const [isBackgroundLoaded, setIsBackgroundLoaded] = useState(false);
 
-    const [player, setPlayer] = useState<Player>({
+    const playerRef = useRef<Player>({
         x: CANVAS_WIDTH / 2,
         y: 500,
         direction: 'UP',
         isMoving: false,
         inventory: inventory
     });
-
-    const playerRef = useRef(player);
+    const promptRef = useRef<string | null>(null);
     const keysPressed = useRef<Set<string>>(new Set());
     const [interactionPrompt, setInteractionPrompt] = useState<string | null>(null);
 
@@ -153,14 +160,16 @@ export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, onExit,
         const loop = () => {
             let { x, y, direction, isMoving } = playerRef.current;
             let dx = 0, dy = 0;
-            if (keysPressed.current.has('ArrowUp') || keysPressed.current.has('KeyW')) dy -= PLAYER_SPEED;
-            if (keysPressed.current.has('ArrowDown') || keysPressed.current.has('KeyS')) dy += PLAYER_SPEED;
-            if (keysPressed.current.has('ArrowLeft') || keysPressed.current.has('KeyA')) dx -= PLAYER_SPEED;
-            if (keysPressed.current.has('ArrowRight') || keysPressed.current.has('KeyD')) dx += PLAYER_SPEED;
+            const k = keysPressed.current;
+            const SPEED = PLAYER_SPEED * (k.has('ShiftLeft') || k.has('ShiftRight') || k.has('Run') ? RUN_MULT : 1);
+            if (k.has('ArrowUp') || k.has('KeyW')) dy -= SPEED;
+            if (k.has('ArrowDown') || k.has('KeyS')) dy += SPEED;
+            if (k.has('ArrowLeft') || k.has('KeyA')) dx -= SPEED;
+            if (k.has('ArrowRight') || k.has('KeyD')) dx += SPEED;
 
             if (dx !== 0 || dy !== 0) {
                 isMoving = true;
-                if (dx !== 0 && dy !== 0) { const l = Math.sqrt(dx * dx + dy * dy); dx = (dx / l) * PLAYER_SPEED; dy = (dy / l) * PLAYER_SPEED; }
+                if (dx !== 0 && dy !== 0) { const l = Math.sqrt(dx * dx + dy * dy); dx = (dx / l) * SPEED; dy = (dy / l) * SPEED; }
                 if (dy < 0) direction = 'UP';
                 if (dy > 0) direction = 'DOWN';
                 if (dx < 0) direction = 'LEFT';
@@ -173,14 +182,18 @@ export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, onExit,
             if (x > DOOR_RECT.x && x < DOOR_RECT.x + DOOR_RECT.width && y > DOOR_RECT.y - 50) prompt = 'Press E to Exit';
             const dist = Math.sqrt(Math.pow(x - (CRAFTING_TABLE_RECT.x + 75), 2) + Math.pow(y - (CRAFTING_TABLE_RECT.y + 60), 2));
             if (dist < 100) prompt = inventory.length > 0 ? 'Press E to Craft Bouquet' : 'Gather flowers first!';
-            setInteractionPrompt(prompt);
-            playerRef.current = { ...playerRef.current, x, y, direction, isMoving };
-            setPlayer(playerRef.current);
+            if (prompt !== promptRef.current) { promptRef.current = prompt; setInteractionPrompt(prompt); }
+            const pl = playerRef.current;
+            pl.x = x; pl.y = y; pl.direction = direction; pl.isMoving = isMoving;
 
             const canvas = canvasRef.current;
             if (canvas) {
-                const ctx = canvas.getContext('2d');
-                if (ctx) {
+                const view = canvas.getContext('2d');
+                // touch: draw offscreen and show a zoomed crop that follows Werka (see utils/camera.ts)
+                if (touchRef.current && !sceneRef.current) sceneRef.current = makeScene();
+                if (!touchRef.current && canvas.width !== CANVAS_WIDTH) { canvas.width = CANVAS_WIDTH; canvas.height = CANVAS_HEIGHT; }
+                const ctx = touchRef.current ? sceneRef.current!.getContext('2d') : view;
+                if (ctx && view) {
                     ctx.fillStyle = '#000';
                     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
                     if (backgroundImageRef.current && isBackgroundLoaded) ctx.drawImage(backgroundImageRef.current, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -245,6 +258,7 @@ export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, onExit,
                         ctx.strokeStyle = 'rgba(255, 255, 0, 0.5)';
                         ctx.strokeRect(CRAFTING_TABLE_RECT.x, CRAFTING_TABLE_RECT.y, CRAFTING_TABLE_RECT.width, CRAFTING_TABLE_RECT.height);
                     }
+                    if (touchRef.current) blitCamera(view, sceneRef.current!, camRef.current, playerRef.current.x, playerRef.current.y - 40, Date.now());
                 }
             }
             animId = requestAnimationFrame(loop);
@@ -262,31 +276,32 @@ export const HouseInterior: React.FC<HouseInteriorProps> = ({ inventory, onExit,
     };
 
     return (
-        <div className="flex flex-col h-[100dvh] w-full bg-stone-900">
+        <div className="flex flex-col h-full w-full bg-stone-900 relative">
             {/* GAME SCREEN AREA - Top section */}
-            <div className="flex-1 flex items-center justify-center p-2 min-h-0">
+            <div className={`flex-1 flex items-center justify-center min-h-0 ${touch ? 'p-0.5' : 'p-1 sm:p-2'}`}>
                 <div
-                    className="relative bg-black rounded-lg overflow-hidden border-4 border-stone-700 shadow-2xl max-w-full max-h-full"
-                    style={{ aspectRatio: `${CANVAS_WIDTH} / ${CANVAS_HEIGHT}` }}
+                    className={`relative bg-black rounded-lg overflow-hidden border-4 border-stone-700 shadow-2xl ${touch ? 'w-full h-full' : 'max-w-full max-h-full'}`}
+                    style={touch ? undefined : { aspectRatio: `${CANVAS_WIDTH} / ${CANVAS_HEIGHT}` }}
                 >
                     <canvas
                         ref={canvasRef}
                         width={CANVAS_WIDTH}
                         height={CANVAS_HEIGHT}
-                        className="w-full h-full"
+                        className="block w-full h-full"
                     />
                     {/* Desktop Inventory Overlay - hidden on mobile */}
-                    {!touch && <InventoryHUD inventory={player.inventory} timeLabel="INSIDE" />}
-                    {interactionPrompt && (
-                        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-16 bg-black/80 text-white px-4 py-2 rounded border border-white/30 pixel-text text-sm animate-pulse pointer-events-none z-20">
-                            {interactionPrompt}
+                    {!touch && <InventoryHUD inventory={inventory} pocket={pocket} kisses={kisses} timeLabel="INSIDE" />}
+                    {interactionPrompt && !touch && (
+                        <div className={`absolute left-1/2 transform -translate-x-1/2 ${touch ? 'top-3' : 'top-1/2 -translate-y-16'} bg-black/80 text-white px-4 py-2 rounded border border-white/30 pixel-text text-[11px] sm:text-sm whitespace-nowrap animate-pulse pointer-events-none z-20`}>
+                            {touch ? interactionPrompt.replace('Press E to ', '') : interactionPrompt}
                         </div>
                     )}
                 </div>
             </div>
 
             {/* MOBILE INVENTORY STRIP - between game and controls (hidden on desktop) */}
-            {touch && <div className="flex-shrink-0"><InventoryHUD inventory={player.inventory} timeLabel="INSIDE" isMobile={true} /></div>}
+            {touch && !landscape && <div className="flex-shrink-0"><InventoryHUD inventory={inventory} pocket={pocket} kisses={kisses} timeLabel="INSIDE" layout="strip" /></div>}
+            {touch && landscape && <InventoryHUD inventory={inventory} pocket={pocket} kisses={kisses} timeLabel="INSIDE" layout="side" />}
 
             {touch && <MobileControls keys={keysPressed} prompt={interactionPrompt} onAction={handleMobileAction} />}
         </div>

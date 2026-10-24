@@ -151,7 +151,60 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
   .dots { grid-template-columns: repeat(6, 15px); gap: 5px; }
   .dot { width: 15px; height: 15px; }
 }
+/* Pocket: trinket slots + lifetime kiss counter, under the basket on the same plate. */
+.pocket { display: flex; align-items: center; gap: 10px; margin-top: 9px; padding-top: 9px; border-top: 1px solid rgba(241, 199, 107, 0.2); }
+.slots { display: grid; grid-template-columns: repeat(4, 22px); gap: 4px; }
+.slot-p { width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; font-size: 14px; line-height: 1; box-shadow: inset 0 0 0 1.5px rgba(251, 243, 220, 0.18); }
+.slot-p.full { background: rgba(251, 243, 220, 0.14); box-shadow: inset 0 0 0 1.5px rgba(241, 199, 107, 0.55); }
+.slot-p.pop { animation: pop 0.45s cubic-bezier(0.3, 1.8, 0.5, 1); }
+.slot-p img { width: 22px; height: 22px; object-fit: contain; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35)); }
+.kisses { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px 4px 6px; border-radius: 999px; background: rgba(244, 114, 182, 0.18); color: #f9a8d4; font-weight: 800; font-size: 14px; }
+.kisses svg { width: 16px; height: 16px; }
+.kisses.golden { background: rgba(245, 197, 66, 0.22); color: #fde68a; box-shadow: 0 0 12px rgba(245, 197, 66, 0.45); }
+.kisses.bump svg { animation: beat 0.6s cubic-bezier(0.3, 1.8, 0.5, 1); }
+@keyframes beat { 30% { transform: scale(1.6); } }
+
+/* Running: the joystick ring lights up past the run threshold. */
+.stick { transition: background 0.15s ease, box-shadow 0.15s ease; }
+.stick.run { background: rgba(241, 199, 107, 0.3); box-shadow: inset 0 0 0 3px var(--gold), 0 0 18px rgba(241, 199, 107, 0.55); }
+.stick.run .knob { background: var(--gold); }
+
+/* Dialogue with Elio: speech box near the bottom, tap anywhere to advance. */
+.talk { position: fixed; inset: 0; display: flex; align-items: flex-end; justify-content: center; padding: 16px max(16px, env(safe-area-inset-right)) max(22px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); animation: fadein 0.2s ease-out; }
+.talk.out { opacity: 0; transition: opacity 0.25s ease; pointer-events: none; }
+.talk .box { position: relative; width: min(620px, 100%); min-height: 112px; background: var(--cream); color: var(--ink); border-radius: 22px; padding: 26px 24px 20px; box-shadow: 0 0 0 3px var(--ink), 0 18px 40px rgba(0, 0, 0, 0.35); }
+.talk .who { position: absolute; top: -15px; left: 20px; background: #5f9e6e; color: var(--cream); font-family: var(--display); font-size: 19px; padding: 3px 16px 5px; border-radius: 999px; box-shadow: 0 0 0 3px var(--ink); }
+.talk p { margin: 0; font-size: 19px; line-height: 1.4; font-weight: 600; min-height: 2.8em; }
+.talk .more { position: absolute; right: 20px; bottom: 12px; width: 0; height: 0; border: 7px solid transparent; border-top: 9px solid var(--petal-d); border-bottom: 0; opacity: 0; }
+.talk.ready .more { opacity: 1; animation: nudge 0.8s ease-in-out infinite; }
+@keyframes nudge { 50% { transform: translateY(3px); } }
+@keyframes fadein { from { opacity: 0; } }
+
+/* Crafting: keepsakes from the pocket. */
+.keeps h3 { margin: 0 0 8px; font-size: 15px; font-weight: 800; }
+.keeps h3 span { font-weight: 600; color: #5b6f73; margin-left: 6px; }
+.extras { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.keep { display: inline-flex; align-items: center; gap: 6px; background: #fffaf0; color: var(--ink); border-radius: 999px; padding: 5px 12px 5px 6px; font-size: 13px; font-weight: 700; box-shadow: inset 0 0 0 1.5px rgba(19, 38, 43, 0.14); min-height: 44px; }
+.keep img { width: 32px; height: 32px; object-fit: contain; }
+.keep[aria-pressed='true'] { background: var(--gold); box-shadow: inset 0 0 0 3px var(--ink); }
+.strip .x { display: inline-grid; place-items: center; width: 18px; height: 18px; margin: -3px 0 0 2px; font-size: 13px; }
+.strip .x img { width: 18px; height: 18px; object-fit: contain; }
+
+@media (max-width: 560px) {
+  .slots { grid-template-columns: repeat(4, 19px); gap: 3px; }
+  .slot-p, .slot-p img { width: 19px; height: 19px; }
+  .pocket { gap: 6px; }
+  .kisses { font-size: 13px; padding: 3px 7px 3px 5px; }
+  .compass { left: auto; right: 68px; transform: none; }
+  .talk p { font-size: 17px; }
+}
+@media (max-height: 500px) {
+  .hud { padding: 8px 10px 7px; }
+  .pocket { margin-top: 6px; padding-top: 6px; }
+  .talk .box { min-height: 0; padding: 20px 20px 14px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .fade, .intro { transition: none; }
-  .act, .dot.pop, .toast.in, .prompt { animation: none; }
+  .act, .dot.pop, .toast.in, .prompt, .slot-p.pop, .kisses.bump svg, .talk, .talk.ready .more { animation: none; }
 }

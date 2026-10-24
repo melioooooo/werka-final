@@ -154,3 +154,29 @@ export const HOUSE_RECT = {
 
 export const MAX_INVENTORY = 12;
 export const MAX_BOUQUET_SIZE = 8;
+
+export const MAX_POCKET = 8; // golden kiss does not count
+export const MAX_EXTRAS = 2;
+export const RUN_MULT = 1.7;
+
+export interface PocketInfo { name: string; emoji: string; color: string; biomes?: Biome[] }
+
+export const TRINKETS: Record<string, PocketInfo> = {
+  ribbon: { name: 'Silk Ribbon', emoji: '🎀', color: '#f472b6', biomes: [Biome.GRASS, Biome.MEADOW] },
+  button: { name: 'Lost Button', emoji: '🔘', color: '#94a3b8', biomes: [Biome.GRASS, Biome.RIVER] },
+  shell: { name: 'Seashell', emoji: '🐚', color: '#fcd5ce', biomes: [Biome.RIVER, Biome.TROPICAL, Biome.SWAMP] },
+  marble: { name: 'Glass Marble', emoji: '🔮', color: '#818cf8', biomes: [Biome.DESERT, Biome.ENCHANTED] },
+  feather: { name: 'Blue Feather', emoji: '🪶', color: '#38bdf8', biomes: [Biome.FOREST, Biome.MOUNTAIN] },
+  key: { name: 'Old Key', emoji: '🗝️', color: '#d4a017', biomes: [Biome.FOREST, Biome.DESERT] },
+  ring: { name: 'Tin Ring', emoji: '💍', color: '#e5e7eb', biomes: [Biome.RIVER, Biome.SWAMP] },
+  acorn: { name: 'Lucky Acorn', emoji: '🌰', color: '#a16207', biomes: [Biome.FOREST, Biome.MEADOW] },
+  pebble: { name: 'Heart Pebble', emoji: '🪨', color: '#a8a29e', biomes: [Biome.MOUNTAIN, Biome.TUNDRA] },
+  butterfly: { name: 'Butterfly Charm', emoji: '🦋', color: '#a78bfa', biomes: [Biome.ENCHANTED, Biome.TROPICAL] },
+  star: { name: 'Fallen Star', emoji: '⭐', color: '#fde047', biomes: [Biome.ENCHANTED, Biome.TUNDRA] }, // rare
+};
+
+export const POCKET_INFO: Record<string, PocketInfo> = {
+  ...TRINKETS,
+  kiss: { name: "Elio's Kiss", emoji: '💋', color: '#f472b6' },
+  golden_kiss: { name: "Elio's Golden Kiss", emoji: '💖', color: '#facc15' },
+};

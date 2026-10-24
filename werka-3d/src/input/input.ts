@@ -23,6 +23,10 @@ export function readMove() {
   return move;
 }
 
+// Run: hold Shift, or push the stick past 85% of its radius.
+export const RUN_AT = 0.85;
+export const running = () => keys.has('ShiftLeft') || keys.has('ShiftRight') || Math.hypot(joy.x, joy.y) > RUN_AT;
+
 export function initInput(canvas: HTMLCanvasElement, stick: HTMLElement, knob: HTMLElement, actionBtn: HTMLElement) {
   window.addEventListener('keydown', e => {
     if ((e.target as HTMLElement).closest?.('button') && (e.code === 'Space' || e.code === 'Enter')) return; // let buttons click
@@ -52,10 +56,11 @@ export function initInput(canvas: HTMLCanvasElement, stick: HTMLElement, knob: H
     if (len > R) { dx *= R / len; dy *= R / len; }
     knob.style.transform = `translate(${dx}px, ${dy}px)`;
     joy.x = dx / R; joy.y = -dy / R;
+    stick.classList.toggle('run', len > R * RUN_AT);
   });
   const end = (e: PointerEvent) => {
     if (e.pointerId !== id) return;
-    id = -1; joy.x = joy.y = 0; stick.hidden = true;
+    id = -1; joy.x = joy.y = 0; stick.hidden = true; stick.classList.remove('run');
   };
   canvas.addEventListener('pointerup', end);
   canvas.addEventListener('pointercancel', end);

@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { SeededRandom } from '../world/rng.ts';
 import { type World, HOUSE, HALF, RIVER_HALF, heightAt, biomeAt, riverZ } from '../world/generate.ts';
-import { toon, addOutlines, gradient, bake } from './toon.ts';
+import { toon, addOutlines, gradient, bakeColors } from './toon.ts';
 
 const mats = new Map<string, THREE.Material>();
 const M = (color: string) => {
@@ -19,12 +19,27 @@ const mesh = (g: THREE.BufferGeometry, color: string | THREE.Material, x = 0, y 
   return m;
 };
 const glowMat = (color: string) => new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(0.4) });
-const glows: { mat: THREE.MeshBasicMaterial; base: THREE.Color; day: number }[] = [];
+const glows: { mat: THREE.MeshBasicMaterial; base: THREE.Color; day: number; key: string }[] = [];
 const glow = (color: string, dayLevel = 0.4) => {
+  const key = color + dayLevel, hit = glows.find(g => g.key === key);
+  if (hit) return hit.mat;
   const mat = glowMat(color);
-  glows.push({ mat, base: new THREE.Color(color), day: dayLevel });
+  glows.push({ mat, base: new THREE.Color(color), day: dayLevel, key });
   return mat;
 };
+// Weathered stone block: a box with its corners nudged so walls look hand-laid, not extruded.
+const block = (w: number, h: number, d: number, seed: number) => {
+  const g = new THREE.BoxGeometry(w, h, d).toNonIndexed();
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    const n = Math.sin(x * 13.1 + y * 7.7 + z * 5.3 + seed * 3.1);
+    p.setXYZ(i, x * (1 - 0.08 * n), y + (y > 0 ? -0.06 * (n + 1) : 0), z * (1 + 0.07 * n));
+  }
+  g.computeVertexNormals();
+  return g;
+};
+
 
 // Radial falloff baked into a tiny canvas texture, shared by all lantern pools.
 const poolMat = (() => {
@@ -39,6 +54,7 @@ const poolMat = (() => {
   return new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
 })();
 const WOOD = '#8a5a34', WOOD_D = '#5e3b22', STONE = '#a49c90', STONE_D = '#7d766c', MOSS = '#5f9a45';
+const vineMat = toon({ color: MOSS, sway: 0.3, rim: 0.3 });
 
 function lantern() {
   const g = new THREE.Group();
@@ -73,19 +89,30 @@ function signpost() {
   return g;
 }
 
-// Ruined stone arch with hanging vines.
+// Ruined stone arch: uneven hand-laid pillars, a cracked lintel, moss, vines and fallen blocks.
 function arch() {
   const g = new THREE.Group();
-  for (const x of [-1.6, 1.6]) for (let k = 0; k < 4; k++) g.add(mesh(new THREE.BoxGeometry(0.8, 0.7, 0.8), k % 2 ? STONE : STONE_D, x + (k % 2) * 0.05, 0.35 + k * 0.7, 0));
-  const lintel = mesh(new THREE.BoxGeometry(4.4, 0.6, 0.9), STONE, 0.3, 3.05, 0);
-  lintel.rotation.z = -0.08;
-  g.add(lintel, mesh(new THREE.BoxGeometry(1.2, 0.5, 0.7), STONE_D, 2.1, 0.25, 0.8));
-  const vineMat = toon({ color: MOSS, sway: 0.35, rim: 0.3 });
+  for (const x of [-1.6, 1.6]) for (let k = 0; k < (x < 0 ? 4 : 3); k++) {
+    const b = mesh(block(0.85 - (k % 2) * 0.08, 0.72, 0.8, k + x), k % 2 ? STONE : STONE_D, x + Math.sin(k * 2.1 + x) * 0.06, 0.36 + k * 0.72, 0);
+    b.rotation.y = Math.sin(k * 1.7 + x) * 0.12;
+    g.add(b);
+  }
+  const lintel = mesh(block(2.6, 0.6, 0.9, 7), STONE, -0.7, 3.0, 0);
+  lintel.rotation.z = -0.05;
+  const broken = mesh(block(1.5, 0.55, 0.85, 9), STONE_D, 1.75, 2.35, 0.1);
+  broken.rotation.z = -0.5;
+  g.add(lintel, broken);
+  for (const [x, z, r] of [[2.3, 0.9, 0.4], [-2.4, 0.7, 1.1], [0.6, 1.3, 2.2]]) {
+    const f = mesh(block(0.8, 0.55, 0.7, x), STONE_D, x, 0.22, z);
+    f.rotation.set(0.15, r, 0.2);
+    g.add(f);
+  }
   for (let i = 0; i < 6; i++) {
     const len = 0.6 + (i % 3) * 0.45;
-    g.add(mesh(new THREE.CylinderGeometry(0.035, 0.02, len, 4).translate(0, -len / 2, 0), vineMat, -1.4 + i * 0.5, 2.8, 0.47));
+    g.add(mesh(new THREE.CylinderGeometry(0.035, 0.02, len, 4).translate(0, -len / 2, 0), vineMat, -1.6 + i * 0.32, 2.75, 0.47));
   }
-  g.add(mesh(new THREE.IcosahedronGeometry(0.45, 0).scale(1.6, 0.5, 1.1), MOSS, -0.2, 3.38, 0));
+  g.add(mesh(new THREE.IcosahedronGeometry(0.45, 1).scale(1.9, 0.42, 1.15), MOSS, -0.8, 3.33, 0));
+  g.add(mesh(new THREE.IcosahedronGeometry(0.4, 1).scale(1.2, 0.4, 1.1), MOSS, -1.6, 2.95, 0.05));
   return g;
 }
 
@@ -178,15 +205,23 @@ const LANDMARK: Record<string, () => { g: THREE.Group; spin?: THREE.Object3D }> 
   },
   GRASS: () => {
     const g = new THREE.Group();
-    for (let k = 0; k < 5; k++) for (let i = 0; i < 8; i++) {
-      if (k > 2 && i % 3 === 0) continue; // broken top
-      const a = (i / 8) * Math.PI * 2;
-      const b = mesh(new THREE.BoxGeometry(1.2, 0.8, 0.6), (i + k) % 2 ? STONE : STONE_D, Math.cos(a) * 1.8, 0.4 + k * 0.8, Math.sin(a) * 1.8);
-      b.rotation.y = -a;
+    // Broken round tower: courses get patchier toward a jagged top, rubble at the foot.
+    for (let k = 0; k < 6; k++) for (let i = 0; i < 9; i++) {
+      const top = 6 - Math.floor(2.5 + 2.5 * Math.sin(i * 1.9 + 0.6));
+      if (k >= top) continue;
+      const a = (i / 9) * Math.PI * 2 + (k % 2) * 0.35;
+      const b = mesh(block(1.15, 0.72, 0.6, i * 7 + k), (i * 3 + k) % 3 ? STONE : STONE_D, Math.cos(a) * 1.9, 0.36 + k * 0.72, Math.sin(a) * 1.9);
+      b.rotation.y = -a + Math.PI / 2;
+      g.add(b);
+      if (k === top - 1 && i % 2 === 0) g.add(mesh(new THREE.IcosahedronGeometry(0.42, 1).scale(1.4, 0.38, 0.9), MOSS, Math.cos(a) * 1.9, 0.78 + k * 0.72, Math.sin(a) * 1.9));
+    }
+    for (let i = 0; i < 6; i++) {
+      const a = i * 1.1 + 0.3, r = 2.9 + (i % 3) * 0.5;
+      const b = mesh(block(0.8, 0.5, 0.6, i), i % 2 ? STONE : STONE_D, Math.cos(a) * r, 0.2, Math.sin(a) * r);
+      b.rotation.set(0.2 * (i % 2), a, 0.25);
       g.add(b);
     }
-    const vineMat = toon({ color: MOSS, sway: 0.3, rim: 0.3 });
-    for (let i = 0; i < 5; i++) g.add(mesh(new THREE.CylinderGeometry(0.04, 0.02, 1.6, 4).translate(0, -0.8, 0), vineMat, Math.cos(i * 1.2) * 2.15, 3.6, Math.sin(i * 1.2) * 2.15));
+    for (let i = 0; i < 5; i++) g.add(mesh(new THREE.CylinderGeometry(0.04, 0.02, 1.6, 4).translate(0, -0.8, 0), vineMat, Math.cos(i * 1.2) * 2.2, 2.9, Math.sin(i * 1.2) * 2.2));
     return { g };
   },
 };
@@ -195,14 +230,22 @@ export function buildProps(w: World, scene: THREE.Scene) {
   const rng = new SeededRandom(`${w.seed}-props`);
   const spinners: THREE.Object3D[] = [];
   // Spinning parts (windmill hub, crystal) stay separate; everything else is baked per material.
+  // All static props merge into a handful of meshes for the whole map; spinners stay live.
+  const root = new THREE.Group();
   const put = (o: THREE.Object3D, x: number, z: number, rotY = 0, keep?: THREE.Object3D) => {
-    if (keep) keep.removeFromParent();
-    const baked = bake(o);
-    baked.position.set(x, heightAt(w, x, z), z);
-    baked.rotation.y = rotY;
-    if (keep) baked.add(keep);
-    addOutlines(baked, 0.03, true);
-    scene.add(baked);
+    o.position.set(x, heightAt(w, x, z), z);
+    o.rotation.y = rotY;
+    if (keep) {
+      o.updateMatrixWorld(true);
+      const holder = bakeColors(keep);
+      keep.matrixWorld.decompose(holder.position, holder.quaternion, holder.scale);
+      keep.removeFromParent();
+      addOutlines(holder, 0.03, true);
+      scene.add(holder);
+      spinners.push(holder);
+      holder.userData.axis = keep.userData.axis;
+    }
+    root.add(o);
   };
 
   // Cottage yard: lanterns along the path, fences, a signpost, a ruined arch with mossy stones.
@@ -226,8 +269,10 @@ export function buildProps(w: World, scene: THREE.Scene) {
     const make = LANDMARK[l.kind] ?? LANDMARK.GRASS;
     const { g, spin } = make();
     put(g, l.x, l.z, rng.range(0, 6), spin);
-    if (spin) spinners.push(spin);
   }
+  const baked = bakeColors(root);
+  addOutlines(baked, 0.03, true);
+  scene.add(baked);
 
   const setNight = (night: number) => {
     for (const g of glows) g.mat.color.copy(g.base).multiplyScalar(g.day + (2.6 - g.day) * night);
@@ -285,18 +330,21 @@ export function decorInstances(w: World, rng: SeededRandom, near: (x: number, z:
     rock.computeVertexNormals();
     return rock;
   })();
-  const make = (geo: THREE.BufferGeometry, mat: THREE.Material, list: THREE.Matrix4[], color?: string) => {
-    const im = new THREE.InstancedMesh(geo, mat, Math.max(1, list.length));
-    list.forEach((mm, i) => { im.setMatrixAt(i, mm); if (color) im.setColorAt(i, new THREE.Color(color)); });
-    im.count = list.length;
-    im.castShadow = im.receiveShadow = true;
-    im.computeBoundingSphere();
-    return im;
+  // Cheap geometry: one InstancedMesh for the whole map beats extra draw calls for culling.
+  const make = (geo: THREE.BufferGeometry, mat: THREE.Material, list: THREE.Matrix4[], color?: string, shadow = true) => {
+    return [list].filter(l => l.length).map(items => {
+      const im = new THREE.InstancedMesh(geo, mat, items.length);
+      items.forEach((mm, i) => { im.setMatrixAt(i, mm); if (color) im.setColorAt(i, new THREE.Color(color)); });
+      im.castShadow = shadow;
+      im.receiveShadow = true;
+      im.computeBoundingSphere();
+      return im;
+    });
   };
   return [
-    make(logGeo, toon({ vertexColors: true, occlude: true, rim: 0.3 }), logs, '#7a5233'),
-    make(shroomGeo, toon({ vertexColors: true, rim: 0.4 }), shrooms),
-    make(mossyGeo, toon({ vertexColors: true, occlude: true, rim: 0.3 }), mossy),
+    ...make(logGeo, toon({ vertexColors: true, occlude: true, rim: 0.3 }), logs, '#7a5233'),
+    ...make(shroomGeo, toon({ vertexColors: true, rim: 0.4 }), shrooms, undefined, false),
+    ...make(mossyGeo, toon({ vertexColors: true, occlude: true, rim: 0.3 }), mossy),
   ];
 }
 

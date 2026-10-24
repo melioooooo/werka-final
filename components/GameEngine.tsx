@@ -1,25 +1,26 @@
-import React, { useRef, useEffect, useState } from 'react';
-import { Player, Flower, FlowerType, Biome, Obstacle } from '../types';
+import React, { useRef, useEffect, useState, useMemo } from 'react';
+import { Player, Flower, Biome, Obstacle, WorldItem } from '../types';
 import { InventoryHUD } from './InventoryHUD';
-import { MobileControls, useIsTouch } from './MobileControls';
+import { MobileControls, useIsTouch, useIsLandscape } from './MobileControls';
 import { SoundManager } from '../utils/SoundManager';
+import { makeWorld, SeededRandom, BRIDGE_WIDTH, SPAWN, isHouseScreen } from '../utils/world';
+import { drawBackground, drawHouse, drawTree, drawRock, drawFlower, drawItem, drawElio, drawElioPeek, elioHide, drawBang, drawHeart, elioPortrait } from '../utils/draw';
+import { newCamera, makeScene, blitCamera } from '../utils/camera';
 import {
   CANVAS_WIDTH,
   CANVAS_HEIGHT,
   PLAYER_SPEED,
-  FLOWER_COLORS,
   HOUSE_RECT,
   MAX_INVENTORY,
-  BIOME_BG_COLORS,
+  MAX_POCKET,
+  POCKET_INFO,
+  RUN_MULT,
   HOUSE_SCREEN,
-  PLAYER_SPRITE_URL,
   PLAYER_SPRITES,
   SPRITE_SIZE,
   SPRITE_SCALE,
   SPRITE_COUNTS,
-  SPRITE_COLS,
   ANIMATION_SPEED,
-  BIOME_COLORS,
   DAY_CYCLE_DURATION
 } from '../constants';
 
@@ -27,7 +28,13 @@ interface GameEngineProps {
   onEnterHouse: (inventory: Flower[]) => void;
   onInventoryChange: (inventory: Flower[]) => void;
   initialInventory: Flower[];
-  dateSeed: string; // Format: YYYY-MM-DD
+  dateSeed: string;
+  pocket: string[];
+  onPocketChange: (pocket: string[]) => void;
+  kisses: number;
+  onKiss: (n: number) => void;
+  elioGifted: boolean;
+  onElioGift: () => void;
 }
 
 interface Particle {
@@ -37,79 +44,123 @@ interface Particle {
   vy: number;
   life: number;
   maxLife: number;
-  type: 'LEAF' | 'SPORE' | 'FIREFLY' | 'RIPPLE' | 'SMOKE' | 'WIND' | 'BIRD';
+  type: 'LEAF' | 'SPORE' | 'FIREFLY' | 'RIPPLE' | 'SMOKE' | 'WIND' | 'BIRD' | 'DUST' | 'SPEED' | 'HEART';
   color: string;
   size: number;
 }
 
-// Simple seeded random generator (LCG)
-class SeededRandom {
-  private seed: number;
-
-  constructor(seedStr: string) {
-    let h = 0xdeadbeef;
-    for (let i = 0; i < seedStr.length; i++) {
-      h = Math.imul(h ^ seedStr.charCodeAt(i), 2654435761);
-    }
-    h = (h ^ h >>> 16) >>> 0;
-    this.seed = h;
-  }
-
-  next(): number {
-    this.seed = (this.seed * 1664525 + 1013904223) % 4294967296;
-    return this.seed / 4294967296;
-  }
-
-  range(min: number, max: number): number {
-    return min + this.next() * (max - min);
-  }
-
-  choice<T>(array: T[]): T {
-    return array[Math.floor(this.next() * array.length)];
-  }
-}
+interface Talk { lines: string[]; i: number; n: number; gift: boolean; top: boolean }
+type RenderEntry = { y: number; k: number; o: any };
 
 const SAVE_KEY = 'werka-bouquet-save-v1';
+const PICK_RADIUS = 35;
+const ELIO_RADIUS = 50;
+const ELIO_LINES = [
+  "I was hiding behind this tree all morning.",
+  "Werka! I knew you'd come this way.",
+  "Shh, don't tell the flowers I'm here.",
+  "I counted the clouds while I waited. Eleven!",
+  "You always find me. How do you do that?",
+  "I picked this spot because it smelled like you.",
+  "I've been practicing my hiding. Clearly not enough.",
+  "Every path today led me to you.",
+];
 
-export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventoryChange, initialInventory, dateSeed }) => {
+const byY = (a: RenderEntry, b: RenderEntry) => a.y - b.y;
+const near = (px: number, py: number, x: number, y: number, r: number) => (px - x) * (px - x) + (py - y) * (py - y) < r * r;
+
+// Vignette with edge alpha 1; drawn with globalAlpha so the night strength needs no new gradient each frame.
+let vignette: HTMLCanvasElement | null = null;
+const getVignette = () => {
+  if (vignette) return vignette;
+  vignette = document.createElement('canvas');
+  vignette.width = CANVAS_WIDTH;
+  vignette.height = CANVAS_HEIGHT;
+  const v = vignette.getContext('2d')!;
+  const g = v.createRadialGradient(CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, CANVAS_WIDTH / 3, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, CANVAS_WIDTH);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(1, 'rgba(0,0,0,1)');
+  v.fillStyle = g;
+  v.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+  return vignette;
+};
+
+// Cloud shadow shape (three overlapping circles), blitted at 15% alpha.
+let cloud: HTMLCanvasElement | null = null;
+const getCloud = () => {
+  if (cloud) return cloud;
+  cloud = document.createElement('canvas');
+  cloud.width = 200;
+  cloud.height = 150;
+  const c = cloud.getContext('2d')!;
+  c.beginPath();
+  c.arc(90, 60, 60, 0, Math.PI * 2);
+  c.arc(130, 80, 70, 0, Math.PI * 2);
+  c.arc(50, 80, 50, 0, Math.PI * 2);
+  c.fill();
+  return cloud;
+};
+
+const loadPicked = (dateSeed: string) => {
+  try {
+    const data = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+    if (data?.dateSeed === dateSeed && Array.isArray(data.picked)) return new Set<string>(data.picked);
+  } catch (e) {
+    console.error("Failed to load save", e);
+  }
+  return new Set<string>();
+};
+
+export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventoryChange, initialInventory, dateSeed, pocket, onPocketChange, kisses, onKiss, elioGifted, onElioGift }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
   const touch = useIsTouch();
+  const landscape = useIsLandscape();
   const backgroundCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Game State
-  const [player, setPlayer] = useState<Player>({
-    x: CANVAS_WIDTH / 2,
-    y: 300,
-    direction: 'DOWN',
-    isMoving: false,
-    inventory: initialInventory
-  });
-
-  const [currentScreen, setCurrentScreen] = useState({ x: 1, y: 1 });
-  const [flowers, setFlowers] = useState<Flower[]>([]);
-  const [obstacles, setObstacles] = useState<Obstacle[]>([]);
-  const [worldMap, setWorldMap] = useState<Biome[][]>([]);
+  const world = useMemo(() => makeWorld(dateSeed), [dateSeed]);
+  const [picked] = useState(() => loadPicked(dateSeed));
+  const [flowers, setFlowers] = useState<Flower[]>(() => world.flowers.map(f => (picked.has(f.id) ? { ...f, isPicked: true } : f)));
+  const [items, setItems] = useState<WorldItem[]>(() => world.items.map(t => (picked.has(t.id) ? { ...t, isPicked: true } : t)));
+  const [inventory, setInventory] = useState<Flower[]>(initialInventory);
+  // Always spawn at the house
+  const [currentScreen, setCurrentScreen] = useState(HOUSE_SCREEN);
   const [notification, setNotification] = useState<string | null>(null);
   const [timeLabel, setTimeLabel] = useState("DAY");
   const [interactionPrompt, setInteractionPrompt] = useState<string | null>(null);
+  const [talk, setTalk] = useState<Talk | null>(null);
+  const [showHelp, setShowHelp] = useState(true);
 
   // Sprite Logic
   const spriteImagesRef = useRef<{ [key: string]: HTMLImageElement }>({});
-  const [areSpritesLoaded, setAreSpritesLoaded] = useState(false);
 
-  // Refs
-  const playerRef = useRef(player);
+  // Refs (the loop reads these, React state only drives the overlays)
+  const playerRef = useRef<Player>({ x: SPAWN.x, y: SPAWN.y, direction: 'DOWN', isMoving: false, inventory: initialInventory });
+  const runningRef = useRef(false);
   const screenRef = useRef(currentScreen);
-  const obstaclesRef = useRef(obstacles);
-  const worldMapRef = useRef(worldMap);
+  const obstaclesRef = useRef<Obstacle[]>(world.obstacles[HOUSE_SCREEN.y][HOUSE_SCREEN.x]);
   const timeRef = useRef(0.35); // 0.0 to 1.0 representing 24h cycle, start at mid-morning (day)
   const particlesRef = useRef<Particle[]>([]);
   const lastStepTime = useRef(0);
+  const lastDust = useRef(0);
   const keysPressed = useRef<Set<string>>(new Set());
-  const pickedIdsRef = useRef<Set<string>>(new Set()); // picked flowers restored from save
   const enteringRef = useRef(false);
+  const promptRef = useRef<string | null>(null);
+  const talkRef = useRef<Talk | null>(null);
+  const pocketRef = useRef(pocket);
+  pocketRef.current = pocket;
   const noteTimer = useRef<number>();
-  const latest = useRef<{ update: (dt: number) => void; draw: () => void }>({ update: () => {}, draw: () => {} });
+  const renderPool = useRef<RenderEntry[]>([]);
+  const sceneRef = useRef<HTMLCanvasElement | null>(null);
+  const camRef = useRef(newCamera());
+  // 0 = hiding behind his cover, otherwise the time he popped out (1 = long ago)
+  const elioPopRef = useRef(elioGifted || !world.elio.cover ? 1 : 0);
+  const renderList = useRef<RenderEntry[]>([]);
+  const latest = useRef<{ update: (dt: number) => void; draw: () => void; advance: () => void }>({ update: () => {}, draw: () => {}, advance: () => {} });
+
+  const screenFlowers = useMemo(() => flowers.filter(f => !f.isPicked && f.screenX === currentScreen.x && f.screenY === currentScreen.y), [flowers, currentScreen]);
+  const screenItems = useMemo(() => items.filter(t => !t.isPicked && t.screenX === currentScreen.x && t.screenY === currentScreen.y), [items, currentScreen]);
+  const elioHere = world.elio.screenX === currentScreen.x && world.elio.screenY === currentScreen.y;
 
   // One timer for notifications so an older one can't clear a newer message
   const flash = (msg: string, ms: number) => {
@@ -118,363 +169,51 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
     noteTimer.current = window.setTimeout(() => setNotification(null), ms);
   };
 
-  // No longer using seasonal concept
-
   useEffect(() => {
     SoundManager.getInstance().playBGM();
-
-    // Load Save: only picked flower ids matter. Inventory is owned by App (it also covers crafting).
-    try {
-      const data = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
-      if (data?.dateSeed === dateSeed && Array.isArray(data.picked)) pickedIdsRef.current = new Set(data.picked);
-    } catch (e) {
-      console.error("Failed to load save", e);
-    }
-    // Always spawn at the house (player ref/state already start there)
-    setCurrentScreen(HOUSE_SCREEN);
-
+    const t = setTimeout(() => setShowHelp(false), 7000);
+    return () => clearTimeout(t);
   }, []);
 
-  // Auto-Save
+  // Auto-Save: picked flower ids plus 't:'/'k:' item ids. Inventory and pocket are owned by App.
   useEffect(() => {
     const saveGame = () => {
-      if (flowers.length === 0) return; // world not generated yet
       const data = {
-        picked: flowers.filter(f => f.isPicked).map(f => f.id),
+        picked: [...flowers.filter(f => f.isPicked).map(f => f.id), ...items.filter(t => t.isPicked).map(t => t.id)],
         dateSeed
       };
       try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch (e) { console.error("Save failed", e); }
     };
-
-    const interval = setInterval(saveGame, 5000); // Auto-save every 5s
+    saveGame();
     window.addEventListener('beforeunload', saveGame);
-    return () => {
-      clearInterval(interval);
-      saveGame(); // also on unmount (entering the house)
-      window.removeEventListener('beforeunload', saveGame);
-    };
-  }, [flowers, dateSeed]);
+    return () => window.removeEventListener('beforeunload', saveGame);
+  }, [flowers, items, dateSeed]);
 
-  // Sync refs - Removed playerRef sync to avoid overwriting the loop's updates
-  // useEffect(() => { playerRef.current = player; }, [player]);
-  useEffect(() => { screenRef.current = currentScreen; }, [currentScreen]);
-  useEffect(() => { obstaclesRef.current = obstacles; }, [obstacles]);
-  useEffect(() => { worldMapRef.current = worldMap; }, [worldMap]);
+  useEffect(() => {
+    screenRef.current = currentScreen;
+    obstaclesRef.current = world.obstacles[currentScreen.y][currentScreen.x];
+  }, [currentScreen, world]);
 
   // Load Sprites
   useEffect(() => {
-    const loadSprites = async () => {
-      const loadedImages: { [key: string]: HTMLImageElement } = {};
-      const promises = Object.entries(PLAYER_SPRITES).map(([key, url]) => {
-        return new Promise<void>((resolve) => {
-          const img = new Image();
-          img.src = url;
-          img.onload = () => {
-            loadedImages[key] = img;
-            resolve();
-          };
-          img.onerror = () => {
-            console.error(`Failed to load sprite: ${url}`);
-            resolve(); // Resolve anyway to avoid hanging
-          };
-        });
-      });
-
-      await Promise.all(promises);
-      spriteImagesRef.current = loadedImages;
-      setAreSpritesLoaded(true);
-    };
-
-    loadSprites();
+    Object.entries(PLAYER_SPRITES).forEach(([key, url]) => {
+      const img = new Image();
+      img.src = url;
+      img.onload = () => { spriteImagesRef.current[key] = img; };
+      img.onerror = () => console.error(`Failed to load sprite: ${url}`);
+    });
   }, []);
-
-  // Helper to get consistent river position across screens
-  const getRiverY = (globalX: number) => {
-    // Combine multiple sines for organic flow
-    const seedNum = [...dateSeed].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 97, 0); // full-seed hash
-    return (CANVAS_HEIGHT / 2) +
-      Math.sin((globalX + seedNum * 100) / 300) * 80 +
-      Math.sin((globalX + seedNum * 50) / 100) * 20;
-  };
-
-  // Helper to get bridge X position for a river screen (consistent per screen)
-  const getBridgeX = (screenX: number, screenY: number) => {
-    const rng = new SeededRandom(`bridge-${dateSeed}-${screenX}-${screenY}`);
-    // Place bridge in middle area of screen, avoiding edges
-    return Math.floor(rng.range(200, CANVAS_WIDTH - 200));
-  };
-
-  // Bridge width constant
-  const BRIDGE_WIDTH = 80;
-
-  // Initialize World
-  useEffect(() => {
-    const rng = new SeededRandom(dateSeed);
-
-    // All biomes have equal weight for balanced variety
-    const allBiomes: Biome[] = [Biome.GRASS, Biome.FOREST, Biome.DESERT, Biome.RIVER, Biome.TROPICAL, Biome.MOUNTAIN, Biome.MEADOW, Biome.SWAMP, Biome.TUNDRA, Biome.ENCHANTED];
-
-    // Collect all non-house screen positions
-    const screenPositions: { x: number, y: number }[] = [];
-    for (let y = 0; y < 3; y++) {
-      for (let x = 0; x < 3; x++) {
-        if (!(x === HOUSE_SCREEN.x && y === HOUSE_SCREEN.y)) {
-          screenPositions.push({ x, y });
-        }
-      }
-    }
-
-    // Shuffle the positions for random assignment
-    for (let i = screenPositions.length - 1; i > 0; i--) {
-      const j = Math.floor(rng.next() * (i + 1));
-      [screenPositions[i], screenPositions[j]] = [screenPositions[j], screenPositions[i]];
-    }
-
-    // Shuffle the available biomes to pick a unique set for this world
-    const shuffledBiomes = [...allBiomes];
-    for (let i = shuffledBiomes.length - 1; i > 0; i--) {
-      const j = Math.floor(rng.next() * (i + 1));
-      [shuffledBiomes[i], shuffledBiomes[j]] = [shuffledBiomes[j], shuffledBiomes[i]];
-    }
-
-    // Assign biomes - take the first 8 biomes from the shuffled list for total variety
-    const biomeAssignments: Map<string, Biome> = new Map();
-    for (let i = 0; i < screenPositions.length; i++) {
-      const pos = screenPositions[i];
-      // Since screenPositions.length is 8 and we have 10 biomes, we'll get 8 unique biomes per map
-      biomeAssignments.set(`${pos.x},${pos.y}`, shuffledBiomes[i % shuffledBiomes.length]);
-    }
-
-    const newMap: Biome[][] = [];
-    for (let y = 0; y < 3; y++) {
-      const row: Biome[] = [];
-      for (let x = 0; x < 3; x++) {
-        if (x === HOUSE_SCREEN.x && y === HOUSE_SCREEN.y) {
-          row.push(Biome.GRASS); // House is always on grass
-        } else {
-          row.push(biomeAssignments.get(`${x},${y}`) || rng.choice(allBiomes));
-        }
-      }
-      newMap.push(row);
-    }
-    setWorldMap(newMap);
-    worldMapRef.current = newMap;
-
-    const newFlowers: Flower[] = [];
-    // Content Generation
-    for (let sy = 0; sy < 3; sy++) {
-      for (let sx = 0; sx < 3; sx++) {
-        const biome = newMap[sy][sx];
-        let flowerTypes: FlowerType[] = [];
-        let density = 0;
-
-        switch (biome) {
-          case Biome.FOREST:
-            flowerTypes = [
-              FlowerType.ROSE, FlowerType.ORCHID, FlowerType.BLUEBELL,
-              FlowerType.PEONY, FlowerType.JASMINE, FlowerType.CHERRY_BLOSSOM
-            ];
-            density = 25;
-            break;
-          case Biome.DESERT:
-            flowerTypes = [FlowerType.SUNFLOWER, FlowerType.CACTUS, FlowerType.POPPY, FlowerType.MARIGOLD];
-            density = 10;
-            break;
-          case Biome.RIVER:
-            flowerTypes = [FlowerType.LILY, FlowerType.HYDRANGEA, FlowerType.HIBISCUS, FlowerType.LOTUS];
-            density = 15;
-            break;
-          case Biome.TROPICAL:
-            flowerTypes = [
-              FlowerType.BIRD_OF_PARADISE, FlowerType.PLUMERIA, FlowerType.PASSION_FLOWER,
-              FlowerType.FRANGIPANI, FlowerType.HIBISCUS
-            ];
-            density = 22;
-            break;
-          case Biome.MOUNTAIN:
-            flowerTypes = [
-              FlowerType.EDELWEISS, FlowerType.ALPINE_ROSE, FlowerType.GENTIAN, FlowerType.COLUMBINE
-            ];
-            density = 12;
-            break;
-          case Biome.MEADOW:
-            flowerTypes = [
-              FlowerType.BLACK_EYED_SUSAN, FlowerType.CORNFLOWER, FlowerType.CLOVER,
-              FlowerType.WILDFLOWER, FlowerType.DAISY, FlowerType.BUTTERCUP
-            ];
-            density = 30; // Meadows are flower-rich
-            break;
-          case Biome.SWAMP:
-            flowerTypes = [
-              FlowerType.WATER_LILY, FlowerType.LOTUS, FlowerType.SWAMP_ROSE,
-              FlowerType.MARSH_MARIGOLD, FlowerType.CATTAIL
-            ];
-            density = 18;
-            break;
-          case Biome.TUNDRA:
-            flowerTypes = [
-              FlowerType.ARCTIC_POPPY, FlowerType.MOSS_CAMPION,
-              FlowerType.PURPLE_SAXIFRAGE, FlowerType.SNOW_CROCUS
-            ];
-            density = 8; // Sparse tundra vegetation
-            break;
-          case Biome.ENCHANTED:
-            flowerTypes = [
-              FlowerType.MOONFLOWER, FlowerType.STARBLOOM, FlowerType.CRYSTAL_ROSE,
-              FlowerType.FAIRY_BELLS, FlowerType.GLOWSHROOM
-            ];
-            density = 20; // Magical abundance
-            break;
-          case Biome.GRASS:
-          default:
-            flowerTypes = [
-              FlowerType.DAISY, FlowerType.TULIP, FlowerType.LAVENDER,
-              FlowerType.DAFFODIL, FlowerType.MARIGOLD
-            ];
-            density = 18;
-            break;
-        }
-
-        // Flowers
-        for (let i = 0; i < density; i++) {
-          const fX = rng.range(20, CANVAS_WIDTH - 20);
-          const fY = rng.range(20, CANVAS_HEIGHT - 20);
-
-          // Avoid house on center screen
-          if (sx === HOUSE_SCREEN.x && sy === HOUSE_SCREEN.y) {
-            if (fX > HOUSE_RECT.x - 30 && fX < HOUSE_RECT.x + HOUSE_RECT.width + 30 &&
-              fY > HOUSE_RECT.y - 30 && fY < HOUSE_RECT.y + HOUSE_RECT.height + 30) continue;
-          }
-
-          // Avoid river center or place properly
-          if (biome === Biome.RIVER) {
-            const globalX = sx * CANVAS_WIDTH + fX;
-            const riverY = getRiverY(globalX);
-            const type = rng.choice(flowerTypes);
-
-            // Lotus and Lily on water
-            if (type === FlowerType.LOTUS || type === FlowerType.LILY) {
-              if (Math.abs(fY - riverY) > 30) continue; // Must be near water center
-            } else {
-              if (Math.abs(fY - riverY) < 45) continue; // Must be on bank
-            }
-
-            newFlowers.push({
-              id: `f-${sx}-${sy}-${i}`,
-              type: type,
-              x: fX, y: fY, screenX: sx, screenY: sy,
-              color: FLOWER_COLORS[type], isPicked: false
-            });
-          } else {
-            // Pick randomly from the biome-specific list for variety
-            const type = rng.choice(flowerTypes);
-            newFlowers.push({
-              id: `f-${sx}-${sy}-${i}`,
-              type: type,
-              x: fX, y: fY, screenX: sx, screenY: sy,
-              color: FLOWER_COLORS[type],
-              isPicked: false
-            });
-          }
-        }
-      }
-    }
-    setFlowers(newFlowers.map(f => (pickedIdsRef.current.has(f.id) ? { ...f, isPicked: true } : f)));
-  }, [dateSeed]); // Removed currentSeason from dependencies
-
-  // Obstacles and Decor Generator
-  useEffect(() => {
-    const rng = new SeededRandom(`${dateSeed}-${currentScreen.x}-${currentScreen.y}`);
-    const biome = worldMap[currentScreen.y]?.[currentScreen.x];
-    if (!biome) return;
-
-    const localObstacles: Obstacle[] = [];
-
-    if (currentScreen.x === HOUSE_SCREEN.x && currentScreen.y === HOUSE_SCREEN.y) {
-      localObstacles.push({
-        x: HOUSE_RECT.x,
-        y: HOUSE_RECT.y,
-        width: HOUSE_RECT.width,
-        height: HOUSE_RECT.height,
-        type: 'HOUSE'
-      });
-    }
-
-    const isCollidingWithHouseOrPath = (x: number, y: number) => {
-      if (currentScreen.x !== HOUSE_SCREEN.x || currentScreen.y !== HOUSE_SCREEN.y) return false;
-      if (x > HOUSE_RECT.x - 50 && x < HOUSE_RECT.x + HOUSE_RECT.width + 50 &&
-        y > HOUSE_RECT.y - 50 && y < HOUSE_RECT.y + HOUSE_RECT.height + 50) return true;
-      if (Math.abs(x - CANVAS_WIDTH / 2) < 60 && y > HOUSE_RECT.y) return true;
-      // Spawn Protection
-      if (Math.abs(x - CANVAS_WIDTH / 2) < 50 && Math.abs(y - 300) < 50) return true;
-      return false;
-    };
-
-    const isCollidingWithRiver = (x: number, y: number) => {
-      if (biome !== Biome.RIVER) return false;
-      const globalX = currentScreen.x * CANVAS_WIDTH + x;
-      const riverY = getRiverY(globalX);
-      return Math.abs(y - riverY) < 80;
-    };
-
-    // Clusters
-    const numClusters = Math.floor(rng.range(1, 4));
-    for (let i = 0; i < numClusters; i++) {
-      const clusterX = rng.range(50, CANVAS_WIDTH - 50);
-      const clusterY = rng.range(50, CANVAS_HEIGHT - 50);
-      const clusterRadius = rng.range(60, 120);
-      const clusterCount = Math.floor(rng.range(4, 9));
-      const clusterType: 'TREE' | 'ROCK' = biome === Biome.DESERT ? 'ROCK' :
-        (biome === Biome.FOREST ? 'TREE' : (rng.next() > 0.4 ? 'TREE' : 'ROCK'));
-
-      if (isCollidingWithHouseOrPath(clusterX, clusterY)) continue;
-      if (isCollidingWithRiver(clusterX, clusterY)) continue;
-
-      for (let j = 0; j < clusterCount; j++) {
-        const angle = rng.next() * Math.PI * 2;
-        const dist = rng.next() * clusterRadius * 0.8;
-        const ox = clusterX + Math.cos(angle) * dist;
-        const oy = clusterY + Math.sin(angle) * dist;
-
-        if (ox < 20 || ox > CANVAS_WIDTH - 40 || oy < 20 || oy > CANVAS_HEIGHT - 40) continue;
-        if (isCollidingWithHouseOrPath(ox, oy)) continue;
-        if (isCollidingWithRiver(ox, oy)) continue;
-
-        localObstacles.push({
-          x: ox, y: oy, width: 40, height: 40,
-          type: clusterType
-        });
-      }
-    }
-
-    // Scattered
-    let scatterDensity = biome === Biome.FOREST ? 12 : (biome === Biome.DESERT ? 5 : 4);
-    if (biome === Biome.RIVER) scatterDensity = 6;
-
-    for (let i = 0; i < scatterDensity; i++) {
-      const ox = rng.range(20, CANVAS_WIDTH - 40);
-      const oy = rng.range(20, CANVAS_HEIGHT - 40);
-
-      if (isCollidingWithHouseOrPath(ox, oy)) continue;
-      if (isCollidingWithRiver(ox, oy)) continue;
-
-      const overlaps = localObstacles.some(o => Math.abs(o.x - ox) < 30 && Math.abs(o.y - oy) < 30);
-      if (overlaps) continue;
-
-      localObstacles.push({
-        x: ox, y: oy, width: 40, height: 40,
-        type: biome === Biome.DESERT ? 'ROCK' : 'TREE'
-      });
-    }
-
-    setObstacles(localObstacles);
-    // Do not reset particles completely, let them persist or reset only type dependent ones
-    // particlesRef.current = [];
-  }, [currentScreen, dateSeed, worldMap]);
 
   // Input
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => keysPressed.current.add(e.code);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (talkRef.current && (e.code === 'KeyE' || e.code === 'Space' || e.code === 'Enter')) {
+        e.preventDefault();
+        if (!e.repeat) latest.current.advance();
+        return;
+      }
+      keysPressed.current.add(e.code);
+    };
     const handleKeyUp = (e: KeyboardEvent) => keysPressed.current.delete(e.code);
     const clearKeys = () => keysPressed.current.clear(); // keyup never fires after alt-tab
     window.addEventListener('keydown', handleKeyDown);
@@ -501,8 +240,33 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
     return () => clearInterval(timer);
   }, []);
 
+  // Typewriter
+  useEffect(() => {
+    if (!talk || talk.n >= talk.lines[talk.i].length) return;
+    const t = setTimeout(() => {
+      const cur = talkRef.current;
+      if (cur) setTalk(talkRef.current = { ...cur, n: cur.n + 1 });
+    }, 28);
+    return () => clearTimeout(t);
+  }, [talk]);
+
+  // Dev-only hook for headless tests: teleport around and inspect the day.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    (window as any).__werka = {
+      world,
+      teleport: (sx: number, sy: number, x: number, y: number) => {
+        playerRef.current = { ...playerRef.current, x, y };
+        camRef.current.snap = true;
+        setCurrentScreen({ x: sx, y: sy });
+      },
+      player: () => ({ ...playerRef.current, screen: screenRef.current, running: runningRef.current }),
+      setTime: (t: number) => { timeRef.current = t; },
+    };
+  }, [world]);
+
   // Game Loop: runs once; always calls the latest update/draw (fresh state closures)
-  useEffect(() => { latest.current = { update, draw }; });
+  useEffect(() => { latest.current = { update, draw, advance }; });
 
   useEffect(() => {
     let animationFrameId: number;
@@ -512,26 +276,7 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
       const now = Date.now();
       const dt = now - lastTime;
       lastTime = now;
-      // Update Time
       timeRef.current = (timeRef.current + dt / DAY_CYCLE_DURATION) % 1.0;
-
-      // Update Season (Real-time override, but keep cycle for effect if desired, or disable)
-      // For now, let's disable the automatic fast cycling since we want real-time seasons
-      /*
-      if (now - seasonTimeRef.current > SEASON_DURATION) {
-        setCurrentSeason(prev => {
-          const seasons = [Season.SPRING, Season.SUMMER, Season.AUTUMN, Season.WINTER];
-          const idx = seasons.indexOf(prev);
-          const next = seasons[(idx + 1) % seasons.length];
-          setNotification(`Season changed to ${next}!`);
-          setTimeout(() => setNotification(null), 3000);
-          return next;
-        });
-        seasonTimeRef.current = now;
-      }
-      */
-
-      // Update Particles
       latest.current.update(dt);
       latest.current.draw();
       animationFrameId = requestAnimationFrame(loop);
@@ -541,13 +286,20 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
     return () => cancelAnimationFrame(animationFrameId);
   }, []);
 
+  const setPrompt = (p: string | null) => {
+    if (promptRef.current === p) return;
+    promptRef.current = p;
+    setInteractionPrompt(p);
+  };
+
+  const spawn = (p: Particle) => particlesRef.current.push(p);
+
   const update = (dt: number) => {
     const isNight = timeRef.current > 0.8 || timeRef.current < 0.2;
+    const now = Date.now();
 
     // --- PARTICLE SPAWNING ---
-
-    // Wind (White pixels/streaks) - Frequent      // Spawn particles
-    if (Math.random() < 0.1) { // Increased spawn rate
+    if (Math.random() < 0.1) {
       let type: 'WIND' | 'LEAF' | 'SPORE' | 'FIREFLY' | 'BIRD';
       const rand = Math.random();
 
@@ -559,65 +311,46 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
 
       if (type === 'WIND') {
         const windSpeed = 3 + Math.random() * 4;
-        particlesRef.current.push({
-          x: -50, // Spawn off screen left
-          y: Math.random() * CANVAS_HEIGHT,
-          vx: windSpeed,
-          vy: (Math.random() - 0.5) * 0.5, // Slight drift up/down
-          life: 0,
-          maxLife: CANVAS_WIDTH / windSpeed + 20,
-          type: 'WIND',
-          color: 'rgba(255, 255, 255, 0.15)', // Subtle white
-          size: Math.random() * 20 + 10 // Length of streak
+        spawn({
+          x: -50, y: Math.random() * CANVAS_HEIGHT,
+          vx: windSpeed, vy: (Math.random() - 0.5) * 0.5,
+          life: 0, maxLife: CANVAS_WIDTH / windSpeed + 20,
+          type: 'WIND', color: 'rgba(255, 255, 255, 0.15)', size: Math.random() * 20 + 10
         });
       } else if (type === 'BIRD') {
         const isRight = Math.random() > 0.5;
-        particlesRef.current.push({
-          x: isRight ? -20 : CANVAS_WIDTH + 20,
-          y: Math.random() * (CANVAS_HEIGHT / 2), // High up
-          vx: isRight ? (2 + Math.random()) : -(2 + Math.random()),
-          vy: (Math.random() - 0.5) * 0.5,
-          life: 0,
-          maxLife: 400,
-          type: 'BIRD',
-          color: '#000', // Silhouette
-          size: 3
+        spawn({
+          x: isRight ? -20 : CANVAS_WIDTH + 20, y: Math.random() * (CANVAS_HEIGHT / 2),
+          vx: isRight ? (2 + Math.random()) : -(2 + Math.random()), vy: (Math.random() - 0.5) * 0.5,
+          life: 0, maxLife: 400, type: 'BIRD', color: '#000', size: 3
         });
-      } else {
-        const biome = worldMapRef.current[screenRef.current.y]?.[screenRef.current.x];
-
-        if (isNight || type !== 'SPORE') { // Only spawn spores during day
-          particlesRef.current.push({
-            x: Math.random() * CANVAS_WIDTH,
-            y: Math.random() * CANVAS_HEIGHT,
-            vx: (Math.random() - 0.5) * 0.5,
-            vy: (Math.random() - 0.5) * 0.5,
-            life: 0, maxLife: 150, type: type as any,
-            color: type === 'FIREFLY' ? '#facc15' : (type === 'LEAF' ? '#a16207' : '#f0fdf4'),
-            size: Math.random() * 3 + 1
-          });
-        }
+      } else if (isNight || type !== 'SPORE') { // Only spawn spores during day
+        spawn({
+          x: Math.random() * CANVAS_WIDTH, y: Math.random() * CANVAS_HEIGHT,
+          vx: (Math.random() - 0.5) * 0.5, vy: (Math.random() - 0.5) * 0.5,
+          life: 0, maxLife: 150, type,
+          color: type === 'FIREFLY' ? '#facc15' : (type === 'LEAF' ? '#a16207' : '#f0fdf4'),
+          size: Math.random() * 3 + 1
+        });
       }
     }
 
     if (Math.random() < 0.1) {
-      const biome = worldMapRef.current[screenRef.current.y]?.[screenRef.current.x];
+      const biome = world.map[screenRef.current.y]?.[screenRef.current.x];
 
       if (biome === Biome.RIVER && Math.random() > 0.5) {
-        particlesRef.current.push({
+        spawn({
           x: Math.random() * CANVAS_WIDTH,
-          y: getRiverY(screenRef.current.x * CANVAS_WIDTH + Math.random() * CANVAS_WIDTH) + (Math.random() - 0.5) * 20,
+          y: world.riverY(screenRef.current.x * CANVAS_WIDTH + Math.random() * CANVAS_WIDTH) + (Math.random() - 0.5) * 20,
           vx: 0.2, vy: 0, life: 0, maxLife: 60, type: 'RIPPLE', color: '#ffffff', size: 1
         });
       }
 
       // Chimney Smoke
-      if (screenRef.current.x === HOUSE_SCREEN.x && screenRef.current.y === HOUSE_SCREEN.y) {
-        particlesRef.current.push({
-          x: HOUSE_RECT.x + HOUSE_RECT.width - 30, // Chimney pos
-          y: HOUSE_RECT.y - 20,
-          vx: 0.2 + Math.random() * 0.2,
-          vy: -0.5 - Math.random() * 0.5,
+      if (isHouseScreen(screenRef.current.x, screenRef.current.y)) {
+        spawn({
+          x: HOUSE_RECT.x + HOUSE_RECT.width - 30, y: HOUSE_RECT.y - 20,
+          vx: 0.2 + Math.random() * 0.2, vy: -0.5 - Math.random() * 0.5,
           life: 0, maxLife: 200, type: 'SMOKE', color: '#ffffff', size: 2 + Math.random() * 4
         });
       }
@@ -625,24 +358,30 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
       // Ambient
       const type = isNight ? 'FIREFLY' : (biome === Biome.FOREST ? 'LEAF' : 'SPORE');
       if (isNight || type !== 'SPORE') {
-        particlesRef.current.push({
-          x: Math.random() * CANVAS_WIDTH,
-          y: Math.random() * CANVAS_HEIGHT,
-          vx: (Math.random() - 0.5) * 0.5,
-          vy: (Math.random() - 0.5) * 0.5,
-          life: 0, maxLife: 150, type: type as any,
+        spawn({
+          x: Math.random() * CANVAS_WIDTH, y: Math.random() * CANVAS_HEIGHT,
+          vx: (Math.random() - 0.5) * 0.5, vy: (Math.random() - 0.5) * 0.5,
+          life: 0, maxLife: 150, type,
           color: type === 'FIREFLY' ? '#facc15' : (type === 'LEAF' ? '#a16207' : '#f0fdf4'),
           size: Math.random() * 3 + 1
         });
       }
     }
 
-    particlesRef.current.forEach(p => {
+    // Update in place and compact (no new array per frame)
+    const ps = particlesRef.current;
+    const wob = Math.sin(now / 200);
+    const wobC = Math.cos(now / 200);
+    let alive = 0;
+    for (let i = 0; i < ps.length; i++) {
+      const p = ps[i];
       p.x += p.vx; p.y += p.vy; p.life++;
       if (p.type === 'SMOKE') { p.size += 0.05; p.x += Math.sin(p.life / 20) * 0.5; }
-      if (p.type === 'FIREFLY') { p.x += Math.sin(Date.now() / 200) * 0.5; p.y += Math.cos(Date.now() / 200) * 0.5; }
-      if (p.type === 'BIRD') {
-        p.y += Math.sin(Date.now() / 200) * 0.2;
+      else if (p.type === 'FIREFLY') { p.x += wob * 0.5; p.y += wobC * 0.5; }
+      else if (p.type === 'HEART') { p.vy += 0.02; p.vx *= 0.98; }
+      else if (p.type === 'DUST') { p.size += 0.15; }
+      else if (p.type === 'BIRD') {
+        p.y += wob * 0.2;
         // Interactive: Scatter if player is close
         const dx = p.x - playerRef.current.x;
         const dy = p.y - playerRef.current.y;
@@ -652,19 +391,32 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
           p.vy += dy / dist * 0.5;
         }
       }
-    });
-    particlesRef.current = particlesRef.current.filter(p => p.life < p.maxLife);
+      if (p.life < p.maxLife) ps[alive++] = p;
+    }
+    ps.length = alive;
 
+    const player = playerRef.current;
+    const keys = keysPressed.current;
+
+    if (talkRef.current) {
+      keys.delete('Space');
+      keys.delete('KeyE');
+      player.isMoving = false;
+      runningRef.current = false;
+      setPrompt(null);
+      return;
+    }
 
     // Movement Logic using Ref for immediate updates (fixes flicker/lag)
-    let { x, y, direction, isMoving, inventory } = playerRef.current;
+    let { x, y, direction, isMoving } = player;
     let dx = 0, dy = 0;
-    const speed = PLAYER_SPEED * Math.min(dt, 50) / 16.67; // same speed on any refresh rate
+    const running = keys.has('ShiftLeft') || keys.has('ShiftRight') || keys.has('Run');
+    const speed = PLAYER_SPEED * (running ? RUN_MULT : 1) * Math.min(dt, 50) / 16.67; // same speed on any refresh rate
 
-    if (keysPressed.current.has('ArrowUp') || keysPressed.current.has('KeyW')) dy -= speed;
-    if (keysPressed.current.has('ArrowDown') || keysPressed.current.has('KeyS')) dy += speed;
-    if (keysPressed.current.has('ArrowLeft') || keysPressed.current.has('KeyA')) dx -= speed;
-    if (keysPressed.current.has('ArrowRight') || keysPressed.current.has('KeyD')) dx += speed;
+    if (keys.has('ArrowUp') || keys.has('KeyW')) dy -= speed;
+    if (keys.has('ArrowDown') || keys.has('KeyS')) dy += speed;
+    if (keys.has('ArrowLeft') || keys.has('KeyA')) dx -= speed;
+    if (keys.has('ArrowRight') || keys.has('KeyD')) dx += speed;
 
     if (dx !== 0 || dy !== 0) {
       isMoving = true;
@@ -682,18 +434,18 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
       let nextX = x + dx;
       let nextY = y + dy;
 
-      let nextScreen = { ...screenRef.current };
+      let nsx = screenRef.current.x, nsy = screenRef.current.y;
       let screenChanged = false;
 
       if (nextX < 0) {
-        if (nextScreen.x > 0) { nextScreen.x--; nextX = CANVAS_WIDTH - 20; screenChanged = true; } else nextX = 0;
+        if (nsx > 0) { nsx--; nextX = CANVAS_WIDTH - 20; screenChanged = true; } else nextX = 0;
       } else if (nextX > CANVAS_WIDTH) {
-        if (nextScreen.x < 2) { nextScreen.x++; nextX = 20; screenChanged = true; } else nextX = CANVAS_WIDTH;
+        if (nsx < 2) { nsx++; nextX = 20; screenChanged = true; } else nextX = CANVAS_WIDTH;
       }
       if (nextY < 0) {
-        if (nextScreen.y > 0) { nextScreen.y--; nextY = CANVAS_HEIGHT - 20; screenChanged = true; } else nextY = 0;
+        if (nsy > 0) { nsy--; nextY = CANVAS_HEIGHT - 20; screenChanged = true; } else nextY = 0;
       } else if (nextY > CANVAS_HEIGHT) {
-        if (nextScreen.y < 2) { nextScreen.y++; nextY = 20; screenChanged = true; } else nextY = CANVAS_HEIGHT;
+        if (nsy < 2) { nsy++; nextY = 20; screenChanged = true; } else nextY = CANVAS_HEIGHT;
       }
 
       let blocked = false;
@@ -705,7 +457,7 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
             // Check Door
             if (nextX > HOUSE_RECT.doorX && nextX < HOUSE_RECT.doorX + HOUSE_RECT.doorWidth &&
               nextY >= HOUSE_RECT.doorY - 15) {
-              if (!enteringRef.current) { enteringRef.current = true; onEnterHouse(inventory); }
+              if (!enteringRef.current) { enteringRef.current = true; onEnterHouse(player.inventory); }
               return; // Stop update
             }
           }
@@ -714,133 +466,172 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
       }
 
       // River Collision with Continuity
-      if (!screenChanged && !blocked) {
-        const biome = worldMapRef.current[nextScreen.y]?.[nextScreen.x];
-        if (biome === Biome.RIVER) {
-          const globalX = nextScreen.x * CANVAS_WIDTH + nextX;
-          const riverY = getRiverY(globalX);
-          const riverDist = Math.abs(nextY - riverY);
-
-          // Check if player is on the bridge
-          const bridgeX = getBridgeX(nextScreen.x, nextScreen.y);
-          const onBridge = Math.abs(nextX - bridgeX) < BRIDGE_WIDTH / 2;
-
-          // If on bridge, allow crossing
-          if (onBridge) {
-            blocked = false;
-          } else if (riverDist < 35) {
-            // If already stuck (current pos in river), allow moving OUT (increasing distance)
-            const currentGlobalX = screenRef.current.x * CANVAS_WIDTH + x;
-            const currentRiverY = getRiverY(currentGlobalX);
-            const currentDist = Math.abs(y - currentRiverY);
-
-            if (currentDist < 35 && riverDist > currentDist) {
-              // Allow moving away from center if already stuck
-              blocked = false;
-            } else {
-              blocked = true;
-            }
-          }
+      if (!screenChanged && !blocked && world.map[nsy]?.[nsx] === Biome.RIVER) {
+        const riverDist = Math.abs(nextY - world.riverY(nsx * CANVAS_WIDTH + nextX));
+        const onBridge = Math.abs(nextX - world.bridgeX(nsx, nsy)) < BRIDGE_WIDTH / 2;
+        if (!onBridge && riverDist < 35) {
+          // If already stuck (current pos in river), allow moving OUT (increasing distance)
+          const currentDist = Math.abs(y - world.riverY(screenRef.current.x * CANVAS_WIDTH + x));
+          blocked = !(currentDist < 35 && riverDist > currentDist);
         }
       }
 
       if (!blocked) {
         x = nextX; y = nextY;
-        if (screenChanged) setCurrentScreen(nextScreen);
+        if (screenChanged) {
+          screenRef.current = { x: nsx, y: nsy };
+          camRef.current.snap = true;
+          obstaclesRef.current = world.obstacles[nsy][nsx];
+          setCurrentScreen(screenRef.current);
+        }
       }
     } else {
       isMoving = false;
     }
 
-    // Update Ref IMMEDIATELY
-    playerRef.current = { ...playerRef.current, x, y, direction, isMoving };
+    player.x = x; player.y = y; player.direction = direction; player.isMoving = isMoving;
+    runningRef.current = running && isMoving;
 
-    // Footstep sounds
-    if (isMoving && Date.now() - lastStepTime.current > 300) {
+    // Footsteps, and dust + speed streaks while running
+    if (isMoving && now - lastStepTime.current > (running ? 190 : 300)) {
       SoundManager.getInstance().playSFX('STEP');
-      lastStepTime.current = Date.now();
+      lastStepTime.current = now;
+    }
+    if (runningRef.current && now - lastDust.current > 70) {
+      lastDust.current = now;
+      const mx = dx / speed, my = dy / speed;
+      spawn({ x: x - mx * 8 + (Math.random() - 0.5) * 8, y: y - 2, vx: -mx * 0.4, vy: -0.25, life: 0, maxLife: 24, type: 'DUST', color: '#f5f5f4', size: 4 });
+      spawn({ x: x - mx * 18 + (Math.random() - 0.5) * 20, y: y - 20 - my * 18 + (Math.random() - 0.5) * 30, vx: -mx * 1.5, vy: -my * 1.5, life: 0, maxLife: 10, type: 'SPEED', color: 'rgba(255,255,255,0.55)', size: 10 });
     }
 
-    // Check for interactions (Space or KeyE)
+    // Interactions (Space or KeyE)
     let prompt: string | null = null;
-    const isInteracting = keysPressed.current.has('Space') || keysPressed.current.has('KeyE');
+    const isInteracting = keys.has('Space') || keys.has('KeyE');
+    const consume = () => { keys.delete('Space'); keys.delete('KeyE'); };
 
-    // 1. Check House Entrance
-    if (screenRef.current.x === HOUSE_SCREEN.x && screenRef.current.y === HOUSE_SCREEN.y) {
-      const distToDoor = Math.sqrt(Math.pow(playerRef.current.x - (HOUSE_RECT.doorX + HOUSE_RECT.doorWidth / 2), 2) + Math.pow(playerRef.current.y - HOUSE_RECT.doorY, 2));
-      if (distToDoor < 50) {
-        prompt = "Press E to Enter";
-        if (isInteracting) {
-          if (enteringRef.current) return;
-          enteringRef.current = true;
-          SoundManager.getInstance().playSFX('ENTER');
-          onEnterHouse(playerRef.current.inventory);
-          keysPressed.current.delete('Space');
-          keysPressed.current.delete('KeyE');
-          return; // Exit game loop since we are changing scenes
-        }
+    // 1. House Entrance
+    if (isHouseScreen(screenRef.current.x, screenRef.current.y) &&
+      near(x, y, HOUSE_RECT.doorX + HOUSE_RECT.doorWidth / 2, HOUSE_RECT.doorY, 50)) {
+      prompt = "Press E to Enter";
+      if (isInteracting) {
+        if (enteringRef.current) return;
+        enteringRef.current = true;
+        SoundManager.getInstance().playSFX('ENTER');
+        onEnterHouse(player.inventory);
+        consume();
+        return; // Exit game loop since we are changing scenes
       }
     }
 
-    // 2. Check Flowers if not at house
+    // 2. Elio: pops out of hiding when Werka comes close
+    if (elioHere && elioPopRef.current === 0 && near(x, y, world.elio.x, world.elio.y, 120)) {
+      elioPopRef.current = now;
+      SoundManager.getInstance().playSFX('PICK');
+    }
+    if (!prompt && elioHere && near(x, y, world.elio.x, world.elio.y, ELIO_RADIUS)) {
+      prompt = "Press E to Talk to Elio";
+      if (isInteracting) { consume(); startTalk(); }
+    }
+
+    // 3. Trinkets and kisses
     if (!prompt) {
-      const nearbyFlower = flowers.find(f =>
-        !f.isPicked &&
-        f.screenX === screenRef.current.x &&
-        f.screenY === screenRef.current.y &&
-        Math.sqrt(Math.pow(playerRef.current.x - f.x, 2) + Math.pow(playerRef.current.y - f.y, 2)) < 35
-      );
-
-      if (nearbyFlower) {
-        prompt = `Press E to Pick ${nearbyFlower.type}`;
-        if (isInteracting) {
-          pickFlower();
-          keysPressed.current.delete('Space');
-          keysPressed.current.delete('KeyE');
-        }
+      const item = screenItems.find(t => near(x, y, t.x, t.y, PICK_RADIUS));
+      if (item) {
+        prompt = `Press E to Pick up ${POCKET_INFO[item.kind].name}`;
+        if (isInteracting) { consume(); pickItem(item); }
       }
     }
 
-    setInteractionPrompt(prompt);
+    // 4. Flowers
+    if (!prompt) {
+      const flower = screenFlowers.find(f => near(x, y, f.x, f.y, PICK_RADIUS));
+      if (flower) {
+        prompt = `Press E to Pick ${flower.type}`;
+        if (isInteracting) { consume(); pickFlower(flower); }
+      }
+    }
+
+    setPrompt(prompt);
   };
 
-  const pickFlower = () => {
-    // 1. Find candidate based on current state
-    const candidate = flowers.find(f =>
-      !f.isPicked &&
-      f.screenX === screenRef.current.x &&
-      f.screenY === screenRef.current.y &&
-      Math.sqrt(Math.pow(playerRef.current.x - f.x, 2) + Math.pow(playerRef.current.y - f.y, 2)) < 35 // same radius as the prompt
-    );
-
-    if (!candidate) return;
-
-    // 2. Check inventory space
+  const pickFlower = (candidate: Flower) => {
     if (playerRef.current.inventory.length >= MAX_INVENTORY) {
       flash("Basket full!", 2000);
       return;
     }
-
-    // 3. Update Flowers State (Mark as picked)
-    setFlowers(prev => prev.map(f =>
-      (f.x === candidate.x && f.y === candidate.y && f.screenX === candidate.screenX && f.screenY === candidate.screenY)
-        ? { ...f, isPicked: true }
-        : f
-    ));
-
-    // 4. Update Player Inventory
+    setFlowers(prev => prev.map(f => (f.id === candidate.id ? { ...f, isPicked: true } : f)));
     const newInventory = [...playerRef.current.inventory, candidate];
     playerRef.current.inventory = newInventory; // Sync ref immediately to prevent loop overwrite
-
-    setPlayer(prev => ({ ...prev, inventory: newInventory }));
-    onInventoryChange(newInventory); // Notify parent
-
-    // 5. Feedback
+    setInventory(newInventory);
+    onInventoryChange(newInventory);
     SoundManager.getInstance().playSFX('PICK');
     flash(`Picked ${candidate.type}`, 1000);
   };
 
-  // --- DRAWING ---
+  const pickItem = (item: WorldItem) => {
+    const cur = pocketRef.current;
+    if (cur.filter(k => k !== 'golden_kiss').length >= MAX_POCKET) {
+      flash("Pocket full! Use some in a bouquet.", 2000);
+      return;
+    }
+    setItems(prev => prev.map(t => (t.id === item.id ? { ...t, isPicked: true } : t)));
+    pocketRef.current = [...cur, item.kind];
+    onPocketChange(pocketRef.current);
+    const info = POCKET_INFO[item.kind];
+    if (item.kind === 'kiss') {
+      onKiss(1);
+      SoundManager.getInstance().playSFX('CHIME');
+      burst(item.x, item.y - 20, 6);
+      flash(`${info.emoji} ${info.name}! (${kisses + 1} total)`, 1600);
+    } else {
+      SoundManager.getInstance().playSFX('PICK');
+      flash(`${info.emoji} Found ${info.name}`, 1400);
+    }
+  };
+
+  const burst = (x: number, y: number, n: number) => {
+    for (let i = 0; i < n; i++) {
+      const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.2;
+      const v = 1.5 + Math.random() * 2;
+      spawn({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0, maxLife: 60 + Math.random() * 30, type: 'HEART', color: '', size: 1 });
+    }
+  };
+
+  const startTalk = () => {
+    const line = new SeededRandom(`${dateSeed}-elio`).choice(ELIO_LINES);
+    const t: Talk = elioGifted
+      ? { lines: ["See you tomorrow, somewhere else!"], i: 0, n: 0, gift: false, top: false }
+      : { lines: ["Ahah! You found me!", line, "Here, this is for you."], i: 0, n: 0, gift: true, top: false };
+    const cam = camRef.current; // keep the two of them visible: box goes on the other half of the view
+    t.top = touch ? playerRef.current.y - cam.y > cam.vh / 2 : world.elio.y > CANVAS_HEIGHT / 2;
+    talkRef.current = t;
+    setTalk(t);
+    const pl = playerRef.current, ex = world.elio.x - pl.x, ey = world.elio.y - pl.y;
+    pl.direction = Math.abs(ex) > Math.abs(ey) ? (ex < 0 ? 'LEFT' : 'RIGHT') : (ey < 0 ? 'UP' : 'DOWN'); // face him
+  };
+
+  // Tap/E/Space: finish the line, then go to the next one, then close.
+  const advance = () => {
+    const t = talkRef.current;
+    if (!t) return;
+    const len = t.lines[t.i].length;
+    let next: Talk | null;
+    if (t.n < len) next = { ...t, n: len };
+    else if (t.i < t.lines.length - 1) next = { ...t, i: t.i + 1, n: 0 };
+    else next = null;
+    talkRef.current = next;
+    setTalk(next);
+    if (!next && t.gift) {
+      pocketRef.current = [...pocketRef.current, 'golden_kiss'];
+      onPocketChange(pocketRef.current);
+      onKiss(3);
+      onElioGift();
+      SoundManager.getInstance().playSFX('CHIME');
+      SoundManager.getInstance().playSFX('CRAFT');
+      burst(world.elio.x, world.elio.y - 50, 18);
+      flash("💖 Elio's Golden Kiss! +3 kisses", 2600);
+    }
+  };
 
   // --- BACKGROUND BUFFERING ---
   useEffect(() => {
@@ -851,1241 +642,79 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
     }
     const bgCtx = backgroundCanvasRef.current.getContext('2d');
     if (!bgCtx) return;
-
-    const biome = worldMapRef.current[screenRef.current.y]?.[screenRef.current.x] || Biome.GRASS;
-
-    // Draw everything static to the background buffer
-    bgCtx.fillStyle = BIOME_COLORS[biome];
-    bgCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-
-    drawTerrainPatches(bgCtx, biome, BIOME_COLORS);
-    drawGroundDetails(bgCtx, biome, BIOME_COLORS);
-
-    if (biome === Biome.RIVER) drawContinuousRiver(bgCtx);
-
-    if (screenRef.current.x === HOUSE_SCREEN.x && screenRef.current.y === HOUSE_SCREEN.y) {
-      drawDetailedPath(bgCtx);
-    }
-  }, [currentScreen, dateSeed, worldMap]); // Removed currentSeason
+    const { x, y } = currentScreen;
+    drawBackground(bgCtx, world.map[y]?.[x] || Biome.GRASS, dateSeed, x, y, isHouseScreen(x, y), world.riverY, world.bridgeX);
+  }, [currentScreen, dateSeed, world]);
 
   // --- DRAWING ---
+  let overlayKey = -1;
+  let overlayStyle = '';
 
   const draw = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    if (!ctxRef.current) ctxRef.current = canvasRef.current?.getContext('2d') ?? null;
+    const view = ctxRef.current;
+    if (!view) return;
+    // touch: draw offscreen, then blit a zoomed crop; desktop: draw straight to the canvas
+    if (touch && !sceneRef.current) sceneRef.current = makeScene();
+    const ctx = touch ? sceneRef.current!.getContext('2d')! : view;
+    if (!touch && view.canvas.width !== CANVAS_WIDTH) { view.canvas.width = CANVAS_WIDTH; view.canvas.height = CANVAS_HEIGHT; }
+    const now = Date.now();
+    const time = timeRef.current;
+    const player = playerRef.current;
 
-    // 1. Draw Cached Background
-    if (backgroundCanvasRef.current) {
-      ctx.drawImage(backgroundCanvasRef.current, 0, 0);
-    } else {
-      // Fallback if buffer not ready (shouldn't happen)
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-    }
+    if (backgroundCanvasRef.current) ctx.drawImage(backgroundCanvasRef.current, 0, 0);
 
-    const renderList = [
-      ...obstaclesRef.current.map(o => ({ type: 'OBSTACLE', obj: o, y: o.y + o.height })),
-      ...flowers.filter(f => !f.isPicked && f.screenX === screenRef.current.x && f.screenY === screenRef.current.y)
-        .map(f => ({ type: 'FLOWER', obj: f, y: f.y })),
-      { type: 'PLAYER', obj: playerRef.current, y: playerRef.current.y }
-    ];
-
-    renderList.sort((a, b) => a.y - b.y);
-
-    renderList.forEach(item => {
-      if (item.type === 'OBSTACLE') {
-        const obs = item.obj as Obstacle;
-        if (obs.type === 'HOUSE') drawDetailedHouse(ctx);
-        else if (obs.type === 'TREE') drawTree(ctx, obs.x, obs.y);
-        else if (obs.type === 'ROCK') drawRock(ctx, obs.x, obs.y);
-      } else if (item.type === 'FLOWER') {
-        drawFlower(ctx, item.obj as Flower);
-      } else if (item.type === 'PLAYER') {
-        drawPlayer(ctx, item.obj as Player);
-      }
-    });
-
-    drawParticles(ctx);
-    drawClouds(ctx);
-    drawDayNightCycle(ctx);
-  };
-
-  const drawTerrainPatches = (ctx: CanvasRenderingContext2D, biome: Biome, seasonPalette: Record<Biome, string>) => {
-    const rng = new SeededRandom(`${dateSeed}-${screenRef.current.x}-${screenRef.current.y}-terrain`);
-    const numPatches = 5;
-    for (let i = 0; i < numPatches; i++) {
-      const x = rng.range(0, CANVAS_WIDTH);
-      const y = rng.range(0, CANVAS_HEIGHT);
-      const rx = rng.range(50, 200);
-      const ry = rng.range(30, 120);
-      const rotation = rng.next() * Math.PI;
-
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(rotation);
-
-      ctx.fillStyle = seasonPalette[biome];
-      ctx.globalAlpha = rng.next() > 0.5 ? 0.25 : 0.15;
-
-      ctx.beginPath();
-      ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    }
-    ctx.globalAlpha = 1.0;
-  };
-
-  const drawGroundDetails = (ctx: CanvasRenderingContext2D, biome: Biome, seasonPalette: Record<Biome, string>) => {
-    const rng = new SeededRandom(`${dateSeed}-${currentScreen.x}-${currentScreen.y}-ground`);
-    // Reduced from 250 to 80 for performance
-    const detailCount = 80;
-
-    // Pre-calculate darker color once instead of using filter
-    const baseColor = seasonPalette[biome];
-
-    if (biome === Biome.GRASS || biome === Biome.FOREST || biome === Biome.RIVER) {
-      ctx.strokeStyle = '#2d5a3d';
-      ctx.fillStyle = '#2d5a3d';
-      ctx.lineWidth = 2;
-
-      for (let i = 0; i < detailCount; i++) {
-        const x = rng.range(0, CANVAS_WIDTH);
-        const y = rng.range(0, CANVAS_HEIGHT);
-
-        if (i % 2 === 0) {
-          ctx.beginPath();
-          ctx.moveTo(x, y);
-          ctx.lineTo(x - 2, y - 4);
-          ctx.moveTo(x, y);
-          ctx.lineTo(x + 2, y - 4);
-          ctx.stroke();
-        } else {
-          ctx.fillRect(x, y, 2, 3);
-        }
-      }
-    } else if (biome === Biome.DESERT) {
-      ctx.fillStyle = '#d4a574';
-      for (let i = 0; i < detailCount; i++) {
-        const x = rng.range(0, CANVAS_WIDTH);
-        const y = rng.range(0, CANVAS_HEIGHT);
-        ctx.fillRect(x, y, 2, 2);
-        if (i % 10 === 0) {
-          ctx.fillStyle = '#78716c';
-          ctx.beginPath();
-          ctx.arc(x, y, 2, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = '#d4a574';
-        }
-      }
-    } else if (biome === Biome.TROPICAL) {
-      // Tropical: dense foliage, vibrant undergrowth
-      ctx.fillStyle = '#047857';
-      for (let i = 0; i < detailCount; i++) {
-        const x = rng.range(0, CANVAS_WIDTH);
-        const y = rng.range(0, CANVAS_HEIGHT);
-        ctx.fillStyle = rng.next() > 0.5 ? '#059669' : '#10b981';
-        ctx.beginPath();
-        ctx.arc(x, y, 2 + rng.next() * 2, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    } else if (biome === Biome.MOUNTAIN) {
-      // Mountain: rocks, pebbles, sparse vegetation
-      for (let i = 0; i < detailCount; i++) {
-        const x = rng.range(0, CANVAS_WIDTH);
-        const y = rng.range(0, CANVAS_HEIGHT);
-        if (i % 5 === 0) {
-          ctx.fillStyle = '#78716c';
-          ctx.beginPath();
-          ctx.ellipse(x, y, 4 + rng.next() * 4, 3, 0, 0, Math.PI * 2);
-          ctx.fill();
-        } else {
-          ctx.fillStyle = rng.next() > 0.5 ? '#a8a29e' : '#d6d3d1';
-          ctx.fillRect(x, y, 2, 2);
-        }
-      }
-    } else if (biome === Biome.MEADOW) {
-      // Meadow: tall swaying grass, colorful dots
-      ctx.strokeStyle = '#65a30d';
-      ctx.lineWidth = 1;
-      for (let i = 0; i < detailCount; i++) {
-        const x = rng.range(0, CANVAS_WIDTH);
-        const y = rng.range(0, CANVAS_HEIGHT);
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.lineTo(x, y - 10);
-        ctx.stroke();
-        if (i % 4 === 0) {
-          const colors = ['#fbbf24', '#ec4899', '#3b82f6', '#f472b6'];
-          ctx.fillStyle = colors[Math.floor(rng.next() * colors.length)];
-          ctx.beginPath();
-          ctx.arc(x, y - 2, 2, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-    } else if (biome === Biome.SWAMP) {
-      // Swamp: murky pools, fog, twisted roots
-      for (let i = 0; i < detailCount; i++) {
-        const x = rng.range(0, CANVAS_WIDTH);
-        const y = rng.range(0, CANVAS_HEIGHT);
-        if (i % 6 === 0) {
-          // Murky water pools
-          ctx.fillStyle = 'rgba(50, 80, 50, 0.4)';
-          ctx.beginPath();
-          ctx.ellipse(x, y, 15 + rng.next() * 20, 8 + rng.next() * 10, 0, 0, Math.PI * 2);
-          ctx.fill();
-        } else if (i % 8 === 0) {
-          // Twisted roots
-          ctx.strokeStyle = '#422006';
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.moveTo(x, y);
-          ctx.quadraticCurveTo(x + rng.range(-10, 10), y - 10, x + rng.range(-15, 15), y - 5);
-          ctx.stroke();
-        } else {
-          // Moss and muck
-          ctx.fillStyle = rng.next() > 0.5 ? '#3f6212' : '#1a2e05';
-          ctx.fillRect(x, y, 3, 2);
-        }
-      }
-      // Fog effect
-      ctx.fillStyle = 'rgba(150, 170, 150, 0.1)';
-      for (let i = 0; i < 5; i++) {
-        const x = rng.range(0, CANVAS_WIDTH);
-        const y = rng.range(CANVAS_HEIGHT / 2, CANVAS_HEIGHT);
-        ctx.beginPath();
-        ctx.ellipse(x, y, 80, 30, 0, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    } else if (biome === Biome.TUNDRA) {
-      // Tundra: snow patches, ice, sparse vegetation
-      for (let i = 0; i < detailCount; i++) {
-        const x = rng.range(0, CANVAS_WIDTH);
-        const y = rng.range(0, CANVAS_HEIGHT);
-        if (i % 4 === 0) {
-          // Snow drifts
-          ctx.fillStyle = '#f8fafc';
-          ctx.beginPath();
-          ctx.ellipse(x, y, 12 + rng.next() * 15, 5 + rng.next() * 5, 0, 0, Math.PI * 2);
-          ctx.fill();
-        } else if (i % 10 === 0) {
-          // Ice crystals
-          ctx.fillStyle = '#bfdbfe';
-          ctx.beginPath();
-          ctx.moveTo(x, y - 6);
-          ctx.lineTo(x - 3, y);
-          ctx.lineTo(x, y + 6);
-          ctx.lineTo(x + 3, y);
-          ctx.fill();
-        } else {
-          // Frozen ground texture
-          ctx.fillStyle = rng.next() > 0.5 ? '#e0f2fe' : '#cbd5e1';
-          ctx.fillRect(x, y, 2, 2);
-        }
-      }
-    } else if (biome === Biome.ENCHANTED) {
-      // Enchanted: glowing particles, magical sparkles, mushrooms
-      for (let i = 0; i < detailCount; i++) {
-        const x = rng.range(0, CANVAS_WIDTH);
-        const y = rng.range(0, CANVAS_HEIGHT);
-        const pulse = Math.sin(Date.now() / 500 + i) * 0.3 + 0.7;
-        if (i % 8 === 0) {
-          // Glowing mushrooms
-          ctx.fillStyle = `rgba(147, 51, 234, ${pulse})`;
-          ctx.beginPath();
-          ctx.ellipse(x, y, 5, 3, 0, 0, Math.PI);
-          ctx.fill();
-          ctx.fillStyle = '#fdf4ff';
-          ctx.fillRect(x - 1, y, 2, 5);
-        } else if (i % 5 === 0) {
-          // Floating sparkles
-          const sparkleY = y + Math.sin(Date.now() / 300 + x) * 3;
-          ctx.fillStyle = `rgba(250, 240, 137, ${pulse})`;
-          ctx.beginPath();
-          ctx.arc(x, sparkleY, 2, 0, Math.PI * 2);
-          ctx.fill();
-        } else {
-          // Magical ground particles
-          ctx.fillStyle = rng.next() > 0.5 ? '#c4b5fd' : '#a855f7';
-          ctx.beginPath();
-          ctx.arc(x, y, 1 + rng.next(), 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-      // Floating orbs
-      for (let i = 0; i < 3; i++) {
-        const ox = rng.range(50, CANVAS_WIDTH - 50);
-        const oy = rng.range(50, CANVAS_HEIGHT - 100);
-        const float = Math.sin(Date.now() / 400 + i * 2) * 8;
-        const glow = 0.3 + Math.sin(Date.now() / 300 + i) * 0.2;
-        ctx.fillStyle = `rgba(192, 132, 252, ${glow})`;
-        ctx.beginPath();
-        ctx.arc(ox, oy + float, 8, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#fdf4ff';
-        ctx.beginPath();
-        ctx.arc(ox, oy + float, 3, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-  };
-
-  const drawDetailedPath = (ctx: CanvasRenderingContext2D) => {
-    const doorX = CANVAS_WIDTH / 2;
-    const doorY = HOUSE_RECT.doorY;
-    ctx.fillStyle = '#d6d3d1'; // Light Stones
-    const rng = new SeededRandom('path');
-
-    for (let y = doorY; y < CANVAS_HEIGHT; y += 6) {
-      const width = 50 + Math.sin(y / 40) * 15;
-      const offsetX = Math.sin(y / 70) * 25;
-
-      for (let dx = -width / 2; dx < width / 2; dx += 8) {
-        if (rng.next() > 0.2) {
-          // Randomize stone shade
-          const shade = Math.floor(rng.range(200, 240));
-          ctx.fillStyle = `rgb(${shade},${shade - 5},${shade - 10})`;
-          ctx.fillRect(doorX + offsetX + dx, y, 7, 5);
-        }
-      }
-    }
-  };
-
-  const drawContinuousRiver = (ctx: CanvasRenderingContext2D) => {
-    // Bank
-    ctx.fillStyle = '#eecfa1';
-    ctx.beginPath();
-    // Top bank
-    for (let x = 0; x <= CANVAS_WIDTH; x += 10) {
-      const globalX = currentScreen.x * CANVAS_WIDTH + x;
-      const y = getRiverY(globalX);
-      ctx.lineTo(x, y - 48);
-    }
-    ctx.lineTo(CANVAS_WIDTH, CANVAS_HEIGHT);
-    ctx.lineTo(0, CANVAS_HEIGHT);
-    ctx.fill();
-
-    // Overdraw bottom with background color to create the strip
-    ctx.fillStyle = BIOME_BG_COLORS[Biome.RIVER];
-    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-
-    // Draw Bank again properly
-    ctx.fillStyle = '#eecfa1';
-    ctx.beginPath();
-    for (let x = 0; x <= CANVAS_WIDTH; x += 10) {
-      const globalX = currentScreen.x * CANVAS_WIDTH + x;
-      const y = getRiverY(globalX);
-      ctx.lineTo(x, y - 45);
-    }
-    for (let x = CANVAS_WIDTH; x >= 0; x -= 10) {
-      const globalX = currentScreen.x * CANVAS_WIDTH + x;
-      const y = getRiverY(globalX);
-      ctx.lineTo(x, y + 45);
-    }
-    ctx.fill();
-
-    // Water
-    ctx.fillStyle = '#0ea5e9';
-    ctx.beginPath();
-    for (let x = 0; x <= CANVAS_WIDTH; x += 10) {
-      const globalX = currentScreen.x * CANVAS_WIDTH + x;
-      const y = getRiverY(globalX);
-      ctx.lineTo(x, y - 38);
-    }
-    for (let x = CANVAS_WIDTH; x >= 0; x -= 10) {
-      const globalX = currentScreen.x * CANVAS_WIDTH + x;
-      const y = getRiverY(globalX);
-      ctx.lineTo(x, y + 38);
-    }
-    ctx.fill();
-
-    // Details (Lily pads)
-    const rng = new SeededRandom(`river-decor-${currentScreen.x}-${currentScreen.y}`);
-    for (let i = 0; i < 5; i++) {
-      const x = rng.range(20, CANVAS_WIDTH - 20);
-      const globalX = currentScreen.x * CANVAS_WIDTH + x;
-      const cy = getRiverY(globalX);
-      const y = cy + rng.range(-20, 20);
-
-      ctx.fillStyle = '#15803d';
-      ctx.beginPath();
-      ctx.arc(x, y, 8, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#86efac'; // highlight
-      ctx.beginPath();
-      ctx.arc(x + 2, y - 2, 3, 0, Math.PI * 2);
-      ctx.fill();
-      // Cutout
-      ctx.fillStyle = '#0ea5e9';
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(x + 10, y - 5);
-      ctx.lineTo(x + 10, y + 5);
-      ctx.fill();
-    }
-
-    // Cattails
-    for (let i = 0; i < 8; i++) {
-      const x = rng.range(0, CANVAS_WIDTH);
-      const globalX = currentScreen.x * CANVAS_WIDTH + x;
-      const cy = getRiverY(globalX);
-      const bankY = cy - 40 - rng.range(0, 10);
-
-      ctx.strokeStyle = '#166534';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(x, bankY);
-      ctx.lineTo(x, bankY - 20);
-      ctx.stroke();
-
-      ctx.fillStyle = '#78350f';
-      ctx.fillRect(x - 2, bankY - 20, 4, 10);
-    }
-
-    // === BRIDGE ===
-    const bridgeX = getBridgeX(currentScreen.x, currentScreen.y);
-    const bridgeCenterGlobalX = currentScreen.x * CANVAS_WIDTH + bridgeX;
-    const bridgeCenterY = getRiverY(bridgeCenterGlobalX);
-    const bridgeTopY = bridgeCenterY - 55;
-    const bridgeBottomY = bridgeCenterY + 55;
-
-    // Bridge support posts (dark wood)
-    ctx.fillStyle = '#5c4033';
-    ctx.fillRect(bridgeX - BRIDGE_WIDTH / 2 - 5, bridgeTopY - 10, 10, bridgeBottomY - bridgeTopY + 20);
-    ctx.fillRect(bridgeX + BRIDGE_WIDTH / 2 - 5, bridgeTopY - 10, 10, bridgeBottomY - bridgeTopY + 20);
-
-    // Bridge planks (lighter wood)
-    ctx.fillStyle = '#a0826d';
-    for (let py = bridgeTopY; py < bridgeBottomY; py += 8) {
-      ctx.fillRect(bridgeX - BRIDGE_WIDTH / 2 + 5, py, BRIDGE_WIDTH - 10, 6);
-    }
-
-    // Bridge plank outlines for depth
-    ctx.strokeStyle = '#6b4423';
-    ctx.lineWidth = 1;
-    for (let py = bridgeTopY; py < bridgeBottomY; py += 8) {
-      ctx.strokeRect(bridgeX - BRIDGE_WIDTH / 2 + 5, py, BRIDGE_WIDTH - 10, 6);
-    }
-
-    // Bridge railings
-    ctx.fillStyle = '#8b7355';
-    // Left railing
-    ctx.fillRect(bridgeX - BRIDGE_WIDTH / 2 + 2, bridgeTopY - 5, 4, bridgeBottomY - bridgeTopY + 10);
-    // Right railing  
-    ctx.fillRect(bridgeX + BRIDGE_WIDTH / 2 - 6, bridgeTopY - 5, 4, bridgeBottomY - bridgeTopY + 10);
-
-    // Railing posts
-    ctx.fillStyle = '#6b4423';
-    for (let py = bridgeTopY; py <= bridgeBottomY; py += 25) {
-      ctx.fillRect(bridgeX - BRIDGE_WIDTH / 2, py - 3, 8, 10);
-      ctx.fillRect(bridgeX + BRIDGE_WIDTH / 2 - 8, py - 3, 8, 10);
-    }
-  };
-
-  const drawDetailedHouse = (ctx: CanvasRenderingContext2D) => {
-    const x = HOUSE_RECT.x;
-    const y = HOUSE_RECT.y;
-    const w = HOUSE_RECT.width;
-    const h = HOUSE_RECT.height;
-    const lightsOn = timeRef.current < 0.25 || timeRef.current > 0.75;
-
-    // Shadow
-    const shadowOffX = (timeRef.current - 0.5) * 180;
-    ctx.fillStyle = lightsOn ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.3)';
-    ctx.beginPath();
-    ctx.moveTo(x + shadowOffX, y + h);
-    ctx.lineTo(x + w + shadowOffX, y + h);
-    ctx.lineTo(x + w, y + h - 10);
-    ctx.lineTo(x, y + h - 10);
-    ctx.fill();
-
-    // --- PORCH (Foundation) ---
-    ctx.fillStyle = '#44403c'; // Dark stone
-    ctx.fillRect(x - 10, y + h - 20, w + 20, 25);
-    ctx.fillStyle = '#78716c'; // lighter stone tops
-    for (let i = 0; i < 12; i++) ctx.fillRect(x - 10 + i * 20, y + h - 20, 10, 10);
-
-    // --- WALLS ---
-    ctx.fillStyle = '#f5f5f4'; // Plaster
-    ctx.fillRect(x, y + 20, w, h - 20);
-
-    // --- TIMBER FRAMING ---
-    ctx.fillStyle = '#451a03';
-    const beamW = 10;
-    ctx.fillRect(x, y + 20, beamW, h - 20); // Left
-    ctx.fillRect(x + w - beamW, y + 20, beamW, h - 20); // Right
-    ctx.fillRect(x, y + h - beamW, w, beamW); // Bottom
-    ctx.fillRect(x, y + 20, w, beamW); // Top
-    // Crosses
-    ctx.beginPath();
-    ctx.moveTo(x, y + 20); ctx.lineTo(x + w / 4, y + h);
-    ctx.moveTo(x + w, y + 20); ctx.lineTo(x + w * 0.75, y + h);
-    ctx.strokeStyle = '#451a03'; ctx.lineWidth = 6; ctx.stroke();
-
-    // --- ROOF ---
-    // Roof outline shadow for depth
-    ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    ctx.beginPath();
-    ctx.moveTo(x - 25, y + 30);
-    ctx.lineTo(x + w / 2, y - 70);
-    ctx.lineTo(x + w + 25, y + 30);
-    ctx.fill();
-
-    // Main Roof base - darker red
-    ctx.fillStyle = '#7f1d1d';
-    ctx.beginPath();
-    ctx.moveTo(x - 20, y + 25);
-    ctx.lineTo(x + w / 2, y - 65);
-    ctx.lineTo(x + w + 20, y + 25);
-    ctx.closePath();
-    ctx.fill();
-
-    // Roof shingle layers - create depth with multiple rows
-    const roofStartY = y - 60;
-    const roofEndY = y + 25;
-    const roofHeight = roofEndY - roofStartY;
-    const shingleRows = 8;
-
-    for (let row = 0; row < shingleRows; row++) {
-      const rowY = roofStartY + (row / shingleRows) * roofHeight;
-      const progress = row / shingleRows;
-      const halfWidth = progress * (w / 2 + 20);
-
-      // Alternate shingle colors for depth
-      ctx.fillStyle = row % 2 === 0 ? '#991b1b' : '#7f1d1d';
-      ctx.strokeStyle = '#581c1c';
-      ctx.lineWidth = 1;
-
-      // Draw individual shingles in this row
-      const shingleWidth = 18;
-      const startX = x + w / 2 - halfWidth;
-      const endX = x + w / 2 + halfWidth;
-
-      for (let sx = startX; sx < endX; sx += shingleWidth) {
-        // Vary shingle shade slightly
-        const shade = Math.random() > 0.5 ? '#991b1b' : '#7f1d1d';
-        ctx.fillStyle = shade;
-
-        ctx.beginPath();
-        ctx.moveTo(sx, rowY);
-        ctx.lineTo(sx + shingleWidth / 2, rowY + roofHeight / shingleRows);
-        ctx.lineTo(sx + shingleWidth, rowY);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-      }
-    }
-
-    // Roof ridge cap (top edge highlight)
-    ctx.strokeStyle = '#451a03';
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(x + w / 2, y - 65);
-    ctx.lineTo(x + w / 2, y - 65);
-    ctx.stroke();
-
-    // Roof edge trim - left side
-    ctx.strokeStyle = '#451a03';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(x - 20, y + 25);
-    ctx.lineTo(x + w / 2, y - 65);
-    ctx.stroke();
-
-    // Roof edge trim - right side
-    ctx.beginPath();
-    ctx.moveTo(x + w + 20, y + 25);
-    ctx.lineTo(x + w / 2, y - 65);
-    ctx.stroke();
-
-    // Roof bottom edge highlight
-    ctx.strokeStyle = '#78350f';
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(x - 22, y + 27);
-    ctx.lineTo(x + w + 22, y + 27);
-    ctx.stroke();
-
-    // --- CHIMNEY (positioned better with roof) ---
-    // Chimney back (shadow)
-    ctx.fillStyle = '#44403c';
-    ctx.fillRect(x + w - 45, y - 45, 30, 55);
-    // Chimney front
-    ctx.fillStyle = '#57534e';
-    ctx.fillRect(x + w - 42, y - 50, 25, 55);
-    // Chimney bricks pattern
-    ctx.strokeStyle = '#44403c';
-    ctx.lineWidth = 1;
-    for (let by = y - 48; by < y + 5; by += 8) {
-      ctx.beginPath();
-      ctx.moveTo(x + w - 42, by);
-      ctx.lineTo(x + w - 17, by);
-      ctx.stroke();
-    }
-    // Chimney cap
-    ctx.fillStyle = '#292524';
-    ctx.fillRect(x + w - 47, y - 55, 35, 6);
-    // Chimney inner
-    ctx.fillStyle = '#1c1917';
-    ctx.fillRect(x + w - 37, y - 55, 15, 3);
-
-    // --- WINDOWS ---
-    const drawWindow = (wx: number, wy: number) => {
-      // Frame
-      ctx.fillStyle = '#451a03';
-      ctx.fillRect(wx, wy, 36, 40);
-      // Glass
-      ctx.fillStyle = lightsOn ? '#fde047' : '#1e3a8a';
-      ctx.fillRect(wx + 3, wy + 3, 13, 15);
-      ctx.fillRect(wx + 20, wy + 3, 13, 15);
-      ctx.fillRect(wx + 3, wy + 22, 13, 15);
-      ctx.fillRect(wx + 20, wy + 22, 13, 15);
-
-      // Flower Box
-      ctx.fillStyle = '#78350f';
-      ctx.fillRect(wx - 2, wy + 35, 40, 12);
-      // Flowers in box
-      ctx.fillStyle = '#22c55e'; // Leaves
-      ctx.fillRect(wx, wy + 32, 36, 5);
-      ctx.fillStyle = '#f472b6'; // Petals
-      ctx.beginPath(); ctx.arc(wx + 10, wy + 32, 3, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(wx + 26, wy + 32, 3, 0, Math.PI * 2); ctx.fill();
+    // Depth-sorted scene, entries reused from a pool
+    const pool = renderPool.current;
+    const list = renderList.current;
+    list.length = 0;
+    const add = (y: number, k: number, o: any) => {
+      const e = pool[list.length] ?? (pool[list.length] = { y: 0, k: 0, o: null });
+      e.y = y; e.k = k; e.o = o;
+      list.push(e);
     };
+    for (const o of obstaclesRef.current) add(o.y + o.height, 0, o);
+    for (const f of screenFlowers) add(f.y, 1, f);
+    for (const t of screenItems) add(t.y, 2, t);
+    if (elioHere) add(elioPopRef.current === 0 ? elioHide(world.elio.cover!, world.elio.x).sortY : world.elio.y, 3, world.elio);
+    add(player.y, 4, player);
+    list.sort(byY);
 
-    drawWindow(x + 30, y + 50);
-    drawWindow(x + w - 66, y + 50);
-
-    // --- DORMER WINDOW (Roof) ---
-    ctx.fillStyle = '#7f1d1d';
-    ctx.beginPath();
-    ctx.moveTo(x + w / 2, y - 50);
-    ctx.lineTo(x + w / 2 - 20, y - 20);
-    ctx.lineTo(x + w / 2 + 20, y - 20);
-    ctx.fill();
-    ctx.fillStyle = lightsOn ? '#fde047' : '#1e3a8a';
-    ctx.beginPath();
-    ctx.arc(x + w / 2, y - 28, 8, 0, Math.PI * 2);
-    ctx.fill();
-
-    // --- DOOR ---
-    ctx.fillStyle = '#3f2c22';
-    ctx.fillRect(HOUSE_RECT.doorX, HOUSE_RECT.doorY - 50, HOUSE_RECT.doorWidth, 50);
-    // Frame
-    ctx.strokeStyle = '#78350f'; ctx.lineWidth = 3;
-    ctx.strokeRect(HOUSE_RECT.doorX, HOUSE_RECT.doorY - 50, HOUSE_RECT.doorWidth, 50);
-    // Knob
-    ctx.fillStyle = '#fbbf24';
-    ctx.beginPath(); ctx.arc(HOUSE_RECT.doorX + 8, HOUSE_RECT.doorY - 25, 3, 0, Math.PI * 2); ctx.fill();
-
-    // Lantern by door
-    ctx.fillStyle = '#18181b';
-    ctx.fillRect(HOUSE_RECT.doorX - 15, HOUSE_RECT.doorY - 40, 8, 12);
-    ctx.fillStyle = lightsOn ? '#facc15' : '#52525b';
-    ctx.fillRect(HOUSE_RECT.doorX - 13, HOUSE_RECT.doorY - 38, 4, 8);
-
-    // --- PILLARS ---
-    ctx.fillStyle = '#fff';
-    const pillarW = 8;
-    // Left
-    ctx.fillRect(x - 5, y + 20, pillarW, h - 20);
-    // Right
-    ctx.fillRect(x + w - 3, y + 20, pillarW, h - 20);
-  };
-
-  const drawTree = (ctx: CanvasRenderingContext2D, x: number, y: number) => {
-    const sway = Math.sin(Date.now() / 1000 + x) * 2;
-    const shadowOffX = (timeRef.current - 0.5) * 120;
-    const isNight = timeRef.current < 0.2 || timeRef.current > 0.8;
-
-    ctx.fillStyle = `rgba(0,0,0,${isNight ? 0 : 0.2})`;
-    ctx.beginPath();
-    ctx.ellipse(x + 20 + shadowOffX, y + 38, 24, 8, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = '#451a03';
-    ctx.fillRect(x + 15, y + 20, 10, 20);
-
-    ctx.fillStyle = '#14532d';
-    ctx.beginPath();
-    // More complex tree shape
-    ctx.arc(x + 20 + sway, y + 10, 20, 0, Math.PI * 2);
-    ctx.arc(x + 10 + sway, y + 20, 15, 0, Math.PI * 2);
-    ctx.arc(x + 30 + sway, y + 20, 15, 0, Math.PI * 2);
-    ctx.arc(x + 20 + sway, y - 5, 18, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = '#166534';
-    ctx.beginPath();
-    ctx.arc(x + 20 + sway, y + 5, 12, 0, Math.PI * 2);
-    ctx.fill();
-  };
-
-  const drawRock = (ctx: CanvasRenderingContext2D, x: number, y: number) => {
-    const shadowOffX = (timeRef.current - 0.5) * 80;
-    const isNight = timeRef.current < 0.2 || timeRef.current > 0.8;
-    ctx.fillStyle = `rgba(0,0,0,${isNight ? 0 : 0.2})`;
-    ctx.beginPath();
-    ctx.ellipse(x + 20 + shadowOffX, y + 28, 18, 8, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = '#57534e';
-    ctx.beginPath();
-    ctx.moveTo(x + 5, y + 30);
-    ctx.lineTo(x + 10, y + 10);
-    ctx.lineTo(x + 25, y + 5);
-    ctx.lineTo(x + 35, y + 15);
-    ctx.lineTo(x + 40, y + 30);
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.fillStyle = '#78716c';
-    ctx.beginPath();
-    ctx.moveTo(x + 10, y + 12);
-    ctx.lineTo(x + 25, y + 8);
-    ctx.lineTo(x + 20, y + 20);
-    ctx.fill();
-  };
-
-  const drawFlower = (ctx: CanvasRenderingContext2D, f: Flower) => {
-    const sway = Math.sin(Date.now() / 300 + f.x) * 2;
-    const shadowOffX = (timeRef.current - 0.5) * 10;
-    ctx.fillStyle = 'rgba(0,0,0,0.2)';
-    ctx.beginPath();
-    ctx.ellipse(f.x + shadowOffX, f.y, 4, 2, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Stem (Common)
-    ctx.fillStyle = '#166534';
-    if (f.type !== FlowerType.LOTUS && f.type !== FlowerType.CACTUS) {
-      ctx.fillRect(f.x - 1, f.y - 10, 2, 10);
+    for (const e of list) {
+      if (e.k === 0) {
+        const obs = e.o as Obstacle;
+        if (obs.type === 'HOUSE') drawHouse(ctx, time);
+        else if (obs.type === 'TREE') drawTree(ctx, obs.x, obs.y, now, time);
+        else if (obs.type === 'ROCK') drawRock(ctx, obs.x, obs.y, time);
+      } else if (e.k === 1) drawFlower(ctx, e.o, now, time);
+      else if (e.k === 2) drawItem(ctx, e.o.kind, e.o.x, e.o.y, now, near(player.x, player.y, e.o.x, e.o.y, 90));
+      else if (e.k === 3) drawElioNow(ctx, now, time);
+      else drawPlayer(ctx, player, now);
     }
 
-    // Specific Drawing Logic
-    switch (f.type) {
-      case FlowerType.CACTUS:
-        ctx.fillStyle = '#15803d';
-        ctx.beginPath(); ctx.ellipse(f.x, f.y - 8, 6, 10, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = f.color;
-        ctx.beginPath(); ctx.arc(f.x, f.y - 18, 4, 0, Math.PI * 2); ctx.fill();
-        break;
-      case FlowerType.SUNFLOWER:
-        ctx.fillStyle = f.color;
-        for (let i = 0; i < 8; i++) {
-          const ang = (i / 8) * Math.PI * 2;
-          ctx.beginPath();
-          ctx.ellipse(f.x + sway + Math.cos(ang) * 6, f.y - 15 + Math.sin(ang) * 6, 3, 3, 0, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.fillStyle = '#451a03';
-        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 15, 4, 0, Math.PI * 2); ctx.fill();
-        break;
-      case FlowerType.LOTUS:
-        // Floating
-        ctx.fillStyle = '#16a34a'; // Pad
-        ctx.beginPath(); ctx.ellipse(f.x, f.y, 10, 4, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = f.color;
-        ctx.beginPath();
-        ctx.moveTo(f.x - 5, f.y); ctx.lineTo(f.x, f.y - 8); ctx.lineTo(f.x + 5, f.y);
-        ctx.fill();
-        ctx.beginPath(); ctx.arc(f.x, f.y - 2, 4, 0, Math.PI * 2); ctx.fill();
-        break;
-      case FlowerType.JASMINE:
-        // Small stars
-        ctx.fillStyle = f.color;
-        ctx.beginPath();
-        ctx.moveTo(f.x + sway, f.y - 15); ctx.lineTo(f.x - 3 + sway, f.y - 12); ctx.lineTo(f.x + 3 + sway, f.y - 12);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.moveTo(f.x + sway, f.y - 9); ctx.lineTo(f.x - 3 + sway, f.y - 12); ctx.lineTo(f.x + 3 + sway, f.y - 12);
-        ctx.fill();
-        break;
-      case FlowerType.HIBISCUS:
-        ctx.fillStyle = f.color;
-        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 6, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#fef3c7'; // Stamen
-        ctx.fillRect(f.x + sway, f.y - 14, 6, 2);
-        break;
-      case FlowerType.CHERRY_BLOSSOM:
-        // Cluster
-        ctx.fillStyle = f.color;
-        ctx.beginPath(); ctx.arc(f.x + sway - 2, f.y - 14, 3, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(f.x + sway + 2, f.y - 16, 3, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 12, 3, 0, Math.PI * 2); ctx.fill();
-        break;
-      case FlowerType.VIOLET:
-        ctx.fillStyle = f.color;
-        ctx.beginPath();
-        ctx.moveTo(f.x, f.y - 10);
-        ctx.lineTo(f.x - 4, f.y - 15);
-        ctx.lineTo(f.x + 4, f.y - 15);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.moveTo(f.x, f.y - 10);
-        ctx.lineTo(f.x - 3, f.y - 5);
-        ctx.lineTo(f.x + 3, f.y - 5);
-        ctx.fill();
-        break;
-      case FlowerType.BUTTERCUP:
-        ctx.fillStyle = f.color;
-        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 4, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#f59e0b';
-        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 2, 0, Math.PI * 2); ctx.fill();
-        break;
-      case FlowerType.SNAPDRAGON:
-        ctx.fillStyle = f.color;
-        for (let i = 0; i < 3; i++) {
-          ctx.beginPath(); ctx.ellipse(f.x + sway, f.y - 10 - i * 5, 3, 4, 0, 0, Math.PI * 2); ctx.fill();
-        }
-        break;
-      case FlowerType.CAMELLIA:
-        ctx.fillStyle = f.color;
-        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 6, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#fecdd3';
-        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 3, 0, Math.PI * 2); ctx.fill();
-        break;
-      // --- NEW FLOWER TYPES ---
-      case FlowerType.IRIS:
-        // Tall sword-like petals
-        ctx.fillStyle = f.color;
-        ctx.beginPath();
-        ctx.moveTo(f.x + sway, f.y - 20);
-        ctx.lineTo(f.x - 4 + sway, f.y - 10);
-        ctx.lineTo(f.x + 4 + sway, f.y - 10);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.moveTo(f.x - 5 + sway, f.y - 14);
-        ctx.lineTo(f.x - 8 + sway, f.y - 8);
-        ctx.lineTo(f.x - 2 + sway, f.y - 10);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.moveTo(f.x + 5 + sway, f.y - 14);
-        ctx.lineTo(f.x + 8 + sway, f.y - 8);
-        ctx.lineTo(f.x + 2 + sway, f.y - 10);
-        ctx.fill();
-        // Yellow center detail
-        ctx.fillStyle = '#fde047';
-        ctx.fillRect(f.x - 1 + sway, f.y - 13, 2, 4);
-        break;
-      case FlowerType.MAGNOLIA:
-        // Large white/pink bloom with layered petals
-        ctx.fillStyle = f.color;
-        for (let i = 0; i < 6; i++) {
-          const ang = (i / 6) * Math.PI * 2;
-          ctx.beginPath();
-          ctx.ellipse(f.x + sway + Math.cos(ang) * 5, f.y - 14 + Math.sin(ang) * 5, 5, 3, ang, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.fillStyle = '#fce7f3'; // Lighter center
-        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 3, 0, Math.PI * 2); ctx.fill();
-        break;
-      case FlowerType.CHRYSANTHEMUM:
-        // Dense many-petaled fall flower
-        ctx.fillStyle = f.color;
-        for (let ring = 0; ring < 3; ring++) {
-          for (let i = 0; i < 8; i++) {
-            const ang = (i / 8) * Math.PI * 2 + ring * 0.2;
-            const dist = 3 + ring * 2;
-            ctx.beginPath();
-            ctx.ellipse(f.x + sway + Math.cos(ang) * dist, f.y - 14 + Math.sin(ang) * dist, 2, 1.5, ang, 0, Math.PI * 2);
-            ctx.fill();
-          }
-        }
-        ctx.fillStyle = '#78350f'; // Dark center
-        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 2, 0, Math.PI * 2); ctx.fill();
-        break;
-      case FlowerType.WISTERIA:
-        // Cascading purple clusters
-        ctx.fillStyle = f.color;
-        for (let i = 0; i < 5; i++) {
-          const yOff = i * 4;
-          const size = 3 - i * 0.4;
-          ctx.beginPath(); ctx.arc(f.x + sway + (i % 2 === 0 ? -2 : 2), f.y - 18 + yOff, size, 0, Math.PI * 2); ctx.fill();
-        }
-        // Darker accent
-        ctx.fillStyle = '#7c3aed';
-        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 18, 2, 0, Math.PI * 2); ctx.fill();
-        break;
-      case FlowerType.FOXGLOVE:
-        // Tall bell-shaped flowers stacked
-        ctx.fillStyle = f.color;
-        for (let i = 0; i < 4; i++) {
-          const yOff = i * 5;
-          const side = i % 2 === 0 ? -3 : 3;
-          ctx.beginPath();
-          ctx.ellipse(f.x + sway + side, f.y - 22 + yOff, 3, 4, 0, 0, Math.PI * 2);
-          ctx.fill();
-          // Inner spots
-          ctx.fillStyle = '#fce7f3';
-          ctx.beginPath(); ctx.arc(f.x + sway + side, f.y - 22 + yOff, 1, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = f.color;
-        }
-        break;
-      case FlowerType.COSMOS:
-        // Delicate 8-petal star flower
-        ctx.fillStyle = f.color;
-        for (let i = 0; i < 8; i++) {
-          const ang = (i / 8) * Math.PI * 2;
-          ctx.beginPath();
-          ctx.ellipse(f.x + sway + Math.cos(ang) * 5, f.y - 14 + Math.sin(ang) * 5, 3, 1.5, ang, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.fillStyle = '#fef08a'; // Yellow center
-        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 2, 0, Math.PI * 2); ctx.fill();
-        break;
-      case FlowerType.ZINNIA:
-        // Layered colorful petals
-        ctx.fillStyle = f.color;
-        for (let ring = 0; ring < 2; ring++) {
-          for (let i = 0; i < 10; i++) {
-            const ang = (i / 10) * Math.PI * 2 + ring * 0.3;
-            const dist = 4 + ring * 2;
-            ctx.beginPath();
-            ctx.ellipse(f.x + sway + Math.cos(ang) * dist, f.y - 14 + Math.sin(ang) * dist, 2.5, 1.5, ang, 0, Math.PI * 2);
-            ctx.fill();
-          }
-        }
-        ctx.fillStyle = '#fbbf24'; // Golden center
-        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 2.5, 0, Math.PI * 2); ctx.fill();
-        break;
-      case FlowerType.ANEMONE:
-        // Windflower with dark center
-        ctx.fillStyle = f.color;
-        for (let i = 0; i < 6; i++) {
-          const ang = (i / 6) * Math.PI * 2;
-          ctx.beginPath();
-          ctx.ellipse(f.x + sway + Math.cos(ang) * 5, f.y - 14 + Math.sin(ang) * 5, 3.5, 2, ang, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.fillStyle = '#1e293b'; // Dark blue center
-        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 3, 0, Math.PI * 2); ctx.fill();
-        break;
-
-      // === TROPICAL BIOME FLOWERS ===
-      case FlowerType.BIRD_OF_PARADISE:
-        // Exotic spiky orange/purple flower
-        ctx.fillStyle = '#f97316'; // Orange
-        ctx.beginPath();
-        ctx.moveTo(f.x + sway - 8, f.y - 10);
-        ctx.lineTo(f.x + sway + 8, f.y - 20);
-        ctx.lineTo(f.x + sway + 5, f.y - 12);
-        ctx.fill();
-        ctx.fillStyle = '#7c3aed'; // Purple accent
-        ctx.beginPath();
-        ctx.moveTo(f.x + sway - 5, f.y - 12);
-        ctx.lineTo(f.x + sway + 3, f.y - 22);
-        ctx.lineTo(f.x + sway + 0, f.y - 15);
-        ctx.fill();
-        break;
-      case FlowerType.PLUMERIA:
-        // 5 rounded white-pink petals
-        ctx.fillStyle = f.color;
-        for (let i = 0; i < 5; i++) {
-          const ang = (i / 5) * Math.PI * 2 - Math.PI / 2;
-          ctx.beginPath();
-          ctx.ellipse(f.x + sway + Math.cos(ang) * 5, f.y - 14 + Math.sin(ang) * 5, 4, 2.5, ang, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.fillStyle = '#fef08a'; // Yellow center
-        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 3, 0, Math.PI * 2); ctx.fill();
-        break;
-      case FlowerType.PASSION_FLOWER:
-        // Complex circular purple flower
-        ctx.fillStyle = f.color;
-        for (let i = 0; i < 10; i++) {
-          const ang = (i / 10) * Math.PI * 2;
-          ctx.beginPath();
-          ctx.moveTo(f.x + sway, f.y - 14);
-          ctx.lineTo(f.x + sway + Math.cos(ang) * 8, f.y - 14 + Math.sin(ang) * 8);
-          ctx.stroke();
-        }
-        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 4, 0, Math.PI * 2); ctx.fill();
-        break;
-      case FlowerType.FRANGIPANI:
-        // Cream/yellow spiral petals
-        ctx.fillStyle = f.color;
-        for (let i = 0; i < 5; i++) {
-          const ang = (i / 5) * Math.PI * 2;
-          ctx.beginPath();
-          ctx.ellipse(f.x + sway + Math.cos(ang) * 4, f.y - 14 + Math.sin(ang) * 4, 4, 2, ang + 0.5, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.fillStyle = '#fbbf24'; // Golden center
-        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 2, 0, Math.PI * 2); ctx.fill();
-        break;
-
-      // === MOUNTAIN BIOME FLOWERS ===
-      case FlowerType.EDELWEISS:
-        // White star-shaped alpine flower
-        ctx.fillStyle = f.color;
-        for (let i = 0; i < 8; i++) {
-          const ang = (i / 8) * Math.PI * 2;
-          ctx.beginPath();
-          ctx.ellipse(f.x + sway + Math.cos(ang) * 5, f.y - 14 + Math.sin(ang) * 5, 3, 1.5, ang, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.fillStyle = '#fef9c3'; // Fuzzy center
-        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 3, 0, Math.PI * 2); ctx.fill();
-        break;
-      case FlowerType.ALPINE_ROSE:
-        // Pink cluster
-        ctx.fillStyle = f.color;
-        ctx.beginPath(); ctx.arc(f.x + sway - 3, f.y - 16, 4, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(f.x + sway + 3, f.y - 14, 4, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 12, 3, 0, Math.PI * 2); ctx.fill();
-        break;
-      case FlowerType.GENTIAN:
-        // Deep blue bell-shaped
-        ctx.fillStyle = f.color;
-        ctx.beginPath();
-        ctx.moveTo(f.x + sway - 5, f.y - 10);
-        ctx.quadraticCurveTo(f.x + sway, f.y - 20, f.x + sway + 5, f.y - 10);
-        ctx.lineTo(f.x + sway + 3, f.y - 8);
-        ctx.quadraticCurveTo(f.x + sway, f.y - 14, f.x + sway - 3, f.y - 8);
-        ctx.fill();
-        break;
-      case FlowerType.COLUMBINE:
-        // Unique spurred petals
-        ctx.fillStyle = f.color;
-        for (let i = 0; i < 5; i++) {
-          const ang = (i / 5) * Math.PI * 2 - Math.PI / 2;
-          ctx.beginPath();
-          ctx.moveTo(f.x + sway, f.y - 14);
-          ctx.lineTo(f.x + sway + Math.cos(ang) * 8, f.y - 14 + Math.sin(ang) * 8);
-          ctx.lineTo(f.x + sway + Math.cos(ang + 0.3) * 5, f.y - 14 + Math.sin(ang + 0.3) * 5);
-          ctx.fill();
-        }
-        ctx.fillStyle = '#fef08a';
-        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 2, 0, Math.PI * 2); ctx.fill();
-        break;
-
-      // === MEADOW BIOME FLOWERS ===
-      case FlowerType.BLACK_EYED_SUSAN:
-        // Yellow petals with brown center
-        ctx.fillStyle = f.color;
-        for (let i = 0; i < 10; i++) {
-          const ang = (i / 10) * Math.PI * 2;
-          ctx.beginPath();
-          ctx.ellipse(f.x + sway + Math.cos(ang) * 6, f.y - 14 + Math.sin(ang) * 6, 3, 1.5, ang, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.fillStyle = '#78350f'; // Brown center
-        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 4, 0, Math.PI * 2); ctx.fill();
-        break;
-      case FlowerType.CORNFLOWER:
-        // Blue spiky petals
-        ctx.fillStyle = f.color;
-        for (let i = 0; i < 12; i++) {
-          const ang = (i / 12) * Math.PI * 2;
-          ctx.beginPath();
-          ctx.moveTo(f.x + sway, f.y - 14);
-          ctx.lineTo(f.x + sway + Math.cos(ang) * 7, f.y - 14 + Math.sin(ang) * 7);
-          ctx.lineTo(f.x + sway + Math.cos(ang + 0.15) * 4, f.y - 14 + Math.sin(ang + 0.15) * 4);
-          ctx.fill();
-        }
-        ctx.fillStyle = '#1e3a8a'; // Darker center
-        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 2, 0, Math.PI * 2); ctx.fill();
-        break;
-      case FlowerType.CLOVER:
-        // Pink/purple round ball cluster
-        ctx.fillStyle = f.color;
-        for (let i = 0; i < 20; i++) {
-          const ang = (i / 20) * Math.PI * 2;
-          const r = 3 + (i % 3);
-          ctx.beginPath();
-          ctx.arc(f.x + sway + Math.cos(ang) * r * 0.5, f.y - 14 + Math.sin(ang) * r * 0.5, 1.5, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        break;
-      case FlowerType.WILDFLOWER:
-        // Generic colorful multi-petal
-        ctx.fillStyle = f.color;
-        for (let i = 0; i < 6; i++) {
-          const ang = (i / 6) * Math.PI * 2;
-          ctx.beginPath();
-          ctx.ellipse(f.x + sway + Math.cos(ang) * 4, f.y - 14 + Math.sin(ang) * 4, 3, 2, ang, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.fillStyle = '#fef08a';
-        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 2, 0, Math.PI * 2); ctx.fill();
-        break;
-
-      // === SWAMP BIOME FLOWERS ===
-      case FlowerType.WATER_LILY:
-        // Floating on water pad
-        ctx.fillStyle = '#16a34a'; // Green pad
-        ctx.beginPath();
-        ctx.ellipse(f.x, f.y, 12, 5, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = f.color;
-        for (let i = 0; i < 5; i++) {
-          const ang = (i / 5) * Math.PI * 2;
-          ctx.beginPath();
-          ctx.ellipse(f.x + Math.cos(ang) * 4, f.y - 3 + Math.sin(ang) * 2, 4, 2, ang, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.fillStyle = '#fef08a';
-        ctx.beginPath(); ctx.arc(f.x, f.y - 3, 2, 0, Math.PI * 2); ctx.fill();
-        break;
-      case FlowerType.SWAMP_ROSE:
-        // Wild rose with thorny stem
-        ctx.fillStyle = f.color;
-        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 6, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#fbbf24';
-        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 2, 0, Math.PI * 2); ctx.fill();
-        break;
-      case FlowerType.MARSH_MARIGOLD:
-        // Bright yellow marsh flower
-        ctx.fillStyle = f.color;
-        for (let i = 0; i < 5; i++) {
-          const ang = (i / 5) * Math.PI * 2;
-          ctx.beginPath();
-          ctx.ellipse(f.x + sway + Math.cos(ang) * 5, f.y - 14 + Math.sin(ang) * 5, 4, 2.5, ang, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.fillStyle = '#ca8a04';
-        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 3, 0, Math.PI * 2); ctx.fill();
-        break;
-      case FlowerType.CATTAIL:
-        // Tall brown spike
-        ctx.fillStyle = '#166534';
-        ctx.fillRect(f.x - 1, f.y - 25, 2, 25);
-        ctx.fillStyle = f.color;
-        ctx.beginPath();
-        ctx.ellipse(f.x, f.y - 20, 3, 8, 0, 0, Math.PI * 2);
-        ctx.fill();
-        break;
-
-      // === TUNDRA BIOME FLOWERS ===
-      case FlowerType.ARCTIC_POPPY:
-        // Delicate yellow poppy
-        ctx.fillStyle = f.color;
-        for (let i = 0; i < 4; i++) {
-          const ang = (i / 4) * Math.PI * 2;
-          ctx.beginPath();
-          ctx.ellipse(f.x + sway + Math.cos(ang) * 4, f.y - 14 + Math.sin(ang) * 4, 4, 3, ang, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.fillStyle = '#422006';
-        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 2, 0, Math.PI * 2); ctx.fill();
-        break;
-      case FlowerType.MOSS_CAMPION:
-        // Low cushion of pink flowers
-        ctx.fillStyle = '#166534';
-        ctx.beginPath();
-        ctx.ellipse(f.x, f.y - 2, 10, 4, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = f.color;
-        for (let i = 0; i < 8; i++) {
-          const px = f.x + (Math.random() - 0.5) * 16;
-          const py = f.y - 4 + (Math.random() - 0.5) * 4;
-          ctx.beginPath(); ctx.arc(px, py, 2, 0, Math.PI * 2); ctx.fill();
-        }
-        break;
-      case FlowerType.PURPLE_SAXIFRAGE:
-        // Purple star-shaped alpine flower
-        ctx.fillStyle = f.color;
-        for (let i = 0; i < 5; i++) {
-          const ang = (i / 5) * Math.PI * 2 - Math.PI / 2;
-          ctx.beginPath();
-          ctx.moveTo(f.x + sway, f.y - 14);
-          ctx.lineTo(f.x + sway + Math.cos(ang) * 6, f.y - 14 + Math.sin(ang) * 6);
-          ctx.lineTo(f.x + sway + Math.cos(ang + 0.3) * 3, f.y - 14 + Math.sin(ang + 0.3) * 3);
-          ctx.fill();
-        }
-        break;
-      case FlowerType.SNOW_CROCUS:
-        // Pale purple emerging from snow
-        ctx.fillStyle = '#f8fafc'; // Snow base
-        ctx.beginPath();
-        ctx.ellipse(f.x, f.y, 8, 3, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = f.color;
-        ctx.beginPath();
-        ctx.moveTo(f.x - 3 + sway, f.y - 2);
-        ctx.lineTo(f.x + sway, f.y - 12);
-        ctx.lineTo(f.x + 3 + sway, f.y - 2);
-        ctx.fill();
-        break;
-
-      // === ENCHANTED BIOME FLOWERS ===
-      case FlowerType.MOONFLOWER:
-        // Glowing white night flower
-        const moonGlow = 0.5 + Math.sin(Date.now() / 400) * 0.3;
-        ctx.fillStyle = `rgba(224, 231, 255, ${moonGlow})`;
-        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 10, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = f.color;
-        for (let i = 0; i < 6; i++) {
-          const ang = (i / 6) * Math.PI * 2;
-          ctx.beginPath();
-          ctx.ellipse(f.x + sway + Math.cos(ang) * 5, f.y - 14 + Math.sin(ang) * 5, 4, 2, ang, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        break;
-      case FlowerType.STARBLOOM:
-        // Golden star-shaped magical flower
-        const starGlow = 0.7 + Math.sin(Date.now() / 300) * 0.3;
-        ctx.fillStyle = `rgba(254, 240, 138, ${starGlow})`;
-        for (let i = 0; i < 5; i++) {
-          const ang = (i / 5) * Math.PI * 2 - Math.PI / 2;
-          ctx.beginPath();
-          ctx.moveTo(f.x + sway, f.y - 14);
-          ctx.lineTo(f.x + sway + Math.cos(ang) * 8, f.y - 14 + Math.sin(ang) * 8);
-          ctx.lineTo(f.x + sway + Math.cos(ang + 0.6) * 4, f.y - 14 + Math.sin(ang + 0.6) * 4);
-          ctx.fill();
-        }
-        break;
-      case FlowerType.CRYSTAL_ROSE:
-        // Crystalline translucent rose
-        ctx.fillStyle = f.color;
-        ctx.globalAlpha = 0.7;
-        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 6, 0, Math.PI * 2); ctx.fill();
-        ctx.globalAlpha = 0.9;
-        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 14, 4, 0, Math.PI * 2); ctx.fill();
-        ctx.globalAlpha = 1.0;
-        ctx.fillStyle = '#fdf4ff';
-        ctx.beginPath(); ctx.arc(f.x + sway - 1, f.y - 16, 1.5, 0, Math.PI * 2); ctx.fill();
-        break;
-      case FlowerType.FAIRY_BELLS:
-        // Dangling bell-shaped flowers
-        ctx.fillStyle = f.color;
-        for (let i = 0; i < 3; i++) {
-          const bellX = f.x + sway + (i - 1) * 5;
-          const bellY = f.y - 10 - i * 3;
-          ctx.beginPath();
-          ctx.ellipse(bellX, bellY, 3, 4, 0, 0, Math.PI);
-          ctx.fill();
-        }
-        break;
-      case FlowerType.GLOWSHROOM:
-        // Bioluminescent mushroom
-        const shroomGlow = 0.6 + Math.sin(Date.now() / 350) * 0.4;
-        ctx.fillStyle = `rgba(74, 222, 128, ${shroomGlow})`;
-        ctx.beginPath();
-        ctx.ellipse(f.x, f.y - 8, 8, 5, 0, 0, Math.PI);
-        ctx.fill();
-        ctx.fillStyle = '#fdf4ff';
-        ctx.fillRect(f.x - 2, f.y - 4, 4, 8);
-        // Glow effect
-        ctx.fillStyle = `rgba(74, 222, 128, ${shroomGlow * 0.3})`;
-        ctx.beginPath(); ctx.arc(f.x, f.y - 6, 12, 0, Math.PI * 2); ctx.fill();
-        break;
-
-      default:
-        // Generic 3-petal
-        ctx.fillStyle = f.color;
-        ctx.beginPath();
-        ctx.arc(f.x + sway - 3, f.y - 12, 3.5, 0, Math.PI * 2);
-        ctx.arc(f.x + sway + 3, f.y - 12, 3.5, 0, Math.PI * 2);
-        ctx.arc(f.x + sway, f.y - 16, 3.5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#FEF3C7';
-        ctx.beginPath(); ctx.arc(f.x + sway, f.y - 12, 1.5, 0, Math.PI * 2); ctx.fill();
-        break;
-    }
+    drawParticles(ctx, now);
+    drawClouds(ctx, now);
+    drawDayNightCycle(ctx);
+    if (touch) blitCamera(view, sceneRef.current!, camRef.current, player.x, player.y - 30, now);
   };
 
-  const drawPlayer = (ctx: CanvasRenderingContext2D, p: Player) => {
+  const drawElioNow = (ctx: CanvasRenderingContext2D, now: number, time: number) => {
+    const el = world.elio, pop = elioPopRef.current;
+    if (pop === 0) return drawElioPeek(ctx, el.cover!, el.x, now);
+    let x = el.x, y = el.y;
+    const u = (now - pop) / 450;
+    if (u < 1 && el.cover) {
+      // hop out from behind the cover
+      const h = elioHide(el.cover, el.x);
+      const sx = h.cx + h.side * 26;
+      x = sx + (el.x - sx) * u;
+      y = h.y + (el.y - h.y) * u - Math.sin(u * Math.PI) * 26;
+    }
+    drawElio(ctx, x, y, now, time);
+    if (now - pop < 2000) drawBang(ctx, x + 14, y - 74 - Math.round(Math.abs(Math.sin((now - pop) / 120)) * 3));
+  };
+
+  const drawPlayer = (ctx: CanvasRenderingContext2D, p: Player, now: number) => {
     if (isNaN(p.x) || isNaN(p.y)) return; // Safety check
 
     // Always draw a shadow/base so the player is never fully invisible
@@ -2095,7 +724,7 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
     ctx.fill();
 
     const { direction, isMoving } = p;
-    const img = areSpritesLoaded ? spriteImagesRef.current[direction] : null;
+    const img = spriteImagesRef.current[direction];
 
     if (!img || !img.complete || img.naturalWidth === 0) {
       // Fallback if sprites not loaded OR specific sprite missing OR broken
@@ -2106,90 +735,66 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
       return;
     }
 
-    // DYNAMIC SPRITE SHEET CALCULATION
-    // Ignore hardcoded SPRITE_COLS and calculate based on actual image dimensions
-    let imgCols = Math.floor(img.width / SPRITE_SIZE);
-    let imgRows = Math.floor(img.height / SPRITE_SIZE);
-
-    // Fallback for small images (e.g. 48x48 when expecting 52x52)
-    // Treat them as a single frame
-    if (imgCols === 0) imgCols = 1;
-    if (imgRows === 0) imgRows = 1;
-
-    const maxFrames = imgCols * imgRows;
-    // Removed early return for maxFrames === 0 since we force it to at least 1 now
-
-    // Adjust frame count if image has fewer frames than config
+    // Frame grid from the actual image size (small images count as a single frame)
+    const imgCols = Math.floor(img.width / SPRITE_SIZE) || 1;
+    const imgRows = Math.floor(img.height / SPRITE_SIZE) || 1;
     const configFrameCount = SPRITE_COUNTS[direction as keyof typeof SPRITE_COUNTS] || 4;
-    const effectiveFrameCount = Math.min(configFrameCount, maxFrames);
+    const effectiveFrameCount = Math.min(configFrameCount, imgCols * imgRows);
 
-    let frameIndex = isMoving
-      ? Math.floor(Date.now() / ANIMATION_SPEED) % effectiveFrameCount
+    const running = runningRef.current;
+    const frameIndex = isMoving
+      ? Math.floor(now / (running ? ANIMATION_SPEED / RUN_MULT : ANIMATION_SPEED)) % effectiveFrameCount
       : 0; // Idle frame
 
-    // Calculate source x/y dynamically
-    // If imgCols is 1 (vertical strip), col will always be 0, row will increment
-    // If imgCols is N (horizontal strip), row will be 0, col will increment
-    // If grid, both will change
-    let col = frameIndex % imgCols;
-    let row = Math.floor(frameIndex / imgCols);
-
-    let sx = col * SPRITE_SIZE;
-    let sy = row * SPRITE_SIZE;
+    const sx = (frameIndex % imgCols) * SPRITE_SIZE;
+    const sy = Math.floor(frameIndex / imgCols) * SPRITE_SIZE;
 
     const drawWidth = SPRITE_SIZE * SPRITE_SCALE;
     const drawHeight = SPRITE_SIZE * SPRITE_SCALE;
+    const bob = running ? Math.round(Math.abs(Math.sin(now / 70)) * 3) : 0;
     const drawX = Math.floor(p.x - drawWidth / 2);
-    const drawY = Math.floor(p.y - drawHeight + 15); // Anchor at feet
+    const drawY = Math.floor(p.y - drawHeight + 15) - bob; // Anchor at feet
 
     ctx.save();
-
-    // Flip logic: Assuming side.png faces RIGHT by default
+    // side.png faces RIGHT
     if (direction === 'LEFT') {
-      // Flip horizontally
       ctx.translate(p.x, p.y);
       ctx.scale(-1, 1);
       ctx.translate(-p.x, -p.y);
     }
-
-    // Draw with safety for small images
-    // Calculate remaining space from current position to avoid reading out of bounds
     const srcWidth = Math.min(SPRITE_SIZE, img.width - sx);
     const srcHeight = Math.min(SPRITE_SIZE, img.height - sy);
-
-    // Ensure we always draw to the same destination position/size
-    // even if source is smaller (will scale the partial image)
-    ctx.drawImage(
-      img,
-      sx, sy, srcWidth, srcHeight, // Source (what we can safely read)
-      drawX, drawY, drawWidth, drawHeight // Destination (always full size)
-    );
-
+    ctx.drawImage(img, sx, sy, srcWidth, srcHeight, drawX, drawY, drawWidth, drawHeight);
     ctx.restore();
   };
 
-  const drawParticles = (ctx: CanvasRenderingContext2D) => {
-    particlesRef.current.forEach(p => {
-      if (p.type === 'WIND') {
+  const drawParticles = (ctx: CanvasRenderingContext2D, now: number) => {
+    const wingY = Math.sin(now / 100) * 2;
+    for (const p of particlesRef.current) {
+      if (p.type === 'WIND' || p.type === 'SPEED') {
         ctx.strokeStyle = p.color;
-        ctx.lineWidth = 1;
+        ctx.lineWidth = p.type === 'SPEED' ? 2 : 1;
         ctx.beginPath();
         ctx.moveTo(p.x, p.y);
-        ctx.lineTo(p.x + p.size, p.y + p.vy * 5);
+        if (p.type === 'WIND') ctx.lineTo(p.x + p.size, p.y + p.vy * 5);
+        else ctx.lineTo(p.x + p.vx * 5, p.y + p.vy * 5);
         ctx.stroke();
-        return;
+        continue;
       }
 
       if (p.type === 'BIRD') {
         ctx.fillStyle = '#1c1917';
         ctx.beginPath();
-        // Simple V shape
-        const wingY = Math.sin(Date.now() / 100) * 2;
         ctx.moveTo(p.x, p.y);
         ctx.lineTo(p.x - 3, p.y - 2 + wingY);
         ctx.lineTo(p.x + 3, p.y - 2 + wingY);
         ctx.fill();
-        return;
+        continue;
+      }
+
+      if (p.type === 'HEART') {
+        drawHeart(ctx, p.x, p.y, 1 - p.life / p.maxLife);
+        continue;
       }
 
       ctx.fillStyle = p.color;
@@ -2204,28 +809,27 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
       } else if (p.type === 'RIPPLE') {
         ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.ellipse(p.x, p.y, p.life / 5, p.life / 10, 0, 0, Math.PI * 2); ctx.stroke();
+      } else if (p.type === 'DUST') {
+        ctx.globalAlpha = 0.8 * (1 - p.life / p.maxLife);
+        const s = Math.round(p.size);
+        ctx.fillRect(Math.round(p.x - s / 2), Math.round(p.y - s / 2), s, s);
       } else {
         ctx.fillRect(p.x, p.y, p.size, p.size);
       }
       ctx.globalAlpha = 1.0;
-    });
+    }
   };
 
-  const drawClouds = (ctx: CanvasRenderingContext2D) => {
-    const t = Date.now() / 20000; // Slow drift
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
-
-    // Procedural cloud shadows
+  const drawClouds = (ctx: CanvasRenderingContext2D, now: number) => {
+    const t = now / 20000; // Slow drift
+    const img = getCloud();
+    ctx.globalAlpha = 0.15;
     for (let i = 0; i < 5; i++) {
       const x = ((t * (50 + i * 20)) + i * 200) % (CANVAS_WIDTH + 400) - 200;
       const y = (i * 150 + Math.sin(t) * 50) % CANVAS_HEIGHT;
-
-      ctx.beginPath();
-      ctx.arc(x, y, 60, 0, Math.PI * 2);
-      ctx.arc(x + 40, y + 20, 70, 0, Math.PI * 2);
-      ctx.arc(x - 40, y + 20, 50, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.drawImage(img, x - 90, y - 60);
     }
+    ctx.globalAlpha = 1;
   };
 
   const drawDayNightCycle = (ctx: CanvasRenderingContext2D) => {
@@ -2259,64 +863,88 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
     }
 
     if (a > 0) {
-      ctx.fillStyle = `rgba(${Math.floor(r)}, ${Math.floor(g)}, ${Math.floor(b)}, ${a})`;
+      // only build a new colour string when the tint actually changes
+      const key = ((Math.floor(r) * 256 + Math.floor(g)) * 256 + Math.floor(b)) * 1000 + Math.round(a * 1000);
+      if (key !== overlayKey) { overlayKey = key; overlayStyle = `rgba(${Math.floor(r)}, ${Math.floor(g)}, ${Math.floor(b)}, ${Math.round(a * 1000) / 1000})`; }
+      ctx.fillStyle = overlayStyle;
       ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     }
 
-    // Vignette
-    const gradient = ctx.createRadialGradient(
-      CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, CANVAS_WIDTH / 3,
-      CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, CANVAS_WIDTH
-    );
-    gradient.addColorStop(0, 'rgba(0,0,0,0)');
-    gradient.addColorStop(1, `rgba(0,0,0,${0.3 + a * 0.5})`); // Stronger at night
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    // Vignette, stronger at night
+    ctx.globalAlpha = 0.3 + a * 0.5;
+    ctx.drawImage(getVignette(), 0, 0);
+    ctx.globalAlpha = 1;
   };
 
   const handleActionButton = () => {
+    if (talkRef.current) { advance(); return; }
     keysPressed.current.add('KeyE');
     // Clear after a short delay to ensure the game loop catches it
     setTimeout(() => keysPressed.current.delete('KeyE'), 250);
   };
 
+  const hud = (layout: 'desktop' | 'strip' | 'side') =>
+    <InventoryHUD inventory={inventory} pocket={pocket} kisses={kisses} timeLabel={timeLabel} layout={layout} />;
+  const promptText = interactionPrompt && touch ? interactionPrompt.replace('Press E to ', '') : interactionPrompt;
+  const line = talk ? talk.lines[talk.i] : '';
+
   return (
     <div className="flex flex-col h-full w-full bg-stone-900 overflow-hidden relative">
       {/* GAME SCREEN AREA - Top section */}
-      <div className="flex-1 flex items-center justify-center p-2 min-h-0">
+      <div className={`flex-1 flex items-center justify-center min-h-0 ${touch ? 'p-0.5' : 'p-1 sm:p-2'}`}>
         <div
-          className="game-container relative bg-black rounded-lg overflow-hidden border-4 border-stone-700 shadow-2xl max-w-full max-h-full"
-          style={{ aspectRatio: `${CANVAS_WIDTH} / ${CANVAS_HEIGHT}` }}
+          className={`game-container relative bg-black rounded-lg overflow-hidden border-4 border-stone-700 shadow-2xl ${touch ? 'w-full h-full' : 'max-w-full max-h-full'}`}
+          style={touch ? undefined : { aspectRatio: `${CANVAS_WIDTH} / ${CANVAS_HEIGHT}` }}
         >
           <canvas
             ref={canvasRef}
             width={CANVAS_WIDTH}
             height={CANVAS_HEIGHT}
-            className="w-full h-full"
+            className="block w-full h-full"
           />
 
-          {/* Desktop Inventory Overlay - hidden on mobile */}
-          {!touch && <InventoryHUD inventory={player.inventory} timeLabel={timeLabel} />}
+          {!touch && hud('desktop')}
 
-          {interactionPrompt && (
-            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-16 bg-black/80 text-white px-4 py-2 rounded border border-white/30 pixel-text text-sm animate-pulse pointer-events-none z-20">
-              {interactionPrompt}
+          {showHelp && !talk && !notification && !(touch && !landscape) && (
+            <div className="absolute bottom-2 sm:bottom-4 left-1/2 -translate-x-1/2 w-max max-w-[94%] text-center bg-black/70 text-amber-100 px-3 py-1 rounded font-mono text-sm sm:text-lg leading-tight pointer-events-none z-20">
+              {touch ? 'Drag to walk · push the stick all the way to run' : 'WASD to walk · hold Shift to run · E to pick up'}
+            </div>
+          )}
+
+          {promptText && !talk && !touch && (
+            <div className={`absolute left-1/2 transform -translate-x-1/2 ${touch ? 'top-3' : 'top-1/2 -translate-y-16'} bg-black/80 text-white px-3 sm:px-4 py-2 rounded border border-white/30 pixel-text text-[11px] sm:text-sm whitespace-nowrap animate-pulse pointer-events-none z-20`}>
+              {promptText}
             </div>
           )}
 
           {notification && (
-            <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 bg-white/90 text-black px-6 py-2 rounded-full font-bold border-2 border-yellow-500 shadow-lg z-50 transition-all duration-300">
+            <div className={`absolute ${touch && !landscape ? 'top-16' : 'bottom-4 sm:bottom-8'} left-1/2 transform -translate-x-1/2 bg-white/90 text-black px-4 sm:px-6 py-1 sm:py-2 rounded-full font-bold border-2 border-yellow-500 shadow-lg z-50 whitespace-nowrap text-lg`}>
               {notification}
+            </div>
+          )}
+
+          {talk && (
+            <div
+              className={`absolute inset-x-2 sm:inset-x-6 ${talk.top ? 'top-2 sm:top-6' : 'bottom-2 sm:bottom-6'} z-40 flex gap-3 items-start bg-stone-950/90 border-4 border-amber-200/80 rounded-lg p-2 sm:p-4 cursor-pointer select-none touch-none`}
+              onPointerDown={(e) => { e.preventDefault(); advance(); }}
+              role="dialog"
+              aria-label="Elio"
+            >
+              <img src={elioPortrait()} alt="" className="w-12 h-12 sm:w-20 sm:h-20 rounded bg-sky-200 border-2 border-amber-200/60 object-cover object-top flex-shrink-0" style={{ imageRendering: 'pixelated' }} />
+              <div className="flex-1 min-w-0">
+                <div className="pixel-text text-[10px] sm:text-xs text-amber-300 mb-1">ELIO</div>
+                <p className="text-white text-xl sm:text-3xl leading-tight min-h-[2.5em]">{line.slice(0, talk.n)}</p>
+              </div>
+              <span className={`self-end text-amber-200 text-lg ${talk.n >= line.length ? 'animate-bounce' : 'opacity-0'}`}>▼</span>
             </div>
           )}
         </div>
       </div>
 
-      {/* MOBILE INVENTORY STRIP - between game and controls (hidden on desktop) */}
-      {touch && <div className="flex-shrink-0"><InventoryHUD inventory={player.inventory} timeLabel={timeLabel} isMobile={true} /></div>}
+      {touch && !landscape && <div className="flex-shrink-0">{hud('strip')}</div>}
+      {touch && landscape && hud('side')}
 
-      {touch && <MobileControls keys={keysPressed} prompt={interactionPrompt} onAction={handleActionButton} />}
+      {touch && <MobileControls keys={keysPressed} prompt={talk ? 'Press E to Next' : interactionPrompt} onAction={handleActionButton} />}
     </div>
   );
 };
-

@@ -1,7 +1,8 @@
-// Small 3D flower portraits for the crafting grid: the real flower model rendered once per type
+// Small 3D portraits (flowers for the crafting grid, trinkets for the pocket): the real flower model rendered once per type
 // with a tiny offscreen renderer, cached as data URLs. Returns null if WebGL is unavailable.
 import * as THREE from 'three';
 import { flowerGeometry } from './flowers.ts';
+import { pickupGeometry } from './pickups.ts';
 import { toon } from './toon.ts';
 
 const cache = new Map<string, string>();
@@ -22,23 +23,26 @@ function setup() {
   return { r, scene, cam, mesh };
 }
 
-export function flowerIcon(type: string): string | null {
-  const hit = cache.get(type);
+export const flowerIcon = (type: string) => icon(type, () => flowerGeometry(type), 0.6, 0.35);
+export const pickupIcon = (type: string) => icon(`p:${type}`, () => pickupGeometry(type), 0.35, 0.15);
+
+function icon(key: string, geometry: () => THREE.BufferGeometry, rotY: number, lift: number): string | null {
+  const hit = cache.get(key);
   if (hit) return hit;
   try {
     kit ??= setup();
-    const geo = flowerGeometry(type);
+    const geo = geometry();
     if (!geo.boundingSphere) geo.computeBoundingSphere();
     const bs = geo.boundingSphere!;
     kit.mesh.geometry = geo;
-    kit.mesh.rotation.y = 0.6;
-    // Frame the whole plant from slightly above.
+    kit.mesh.rotation.y = rotY;
+    // Frame the whole model from slightly above.
     const d = bs.radius / Math.sin(THREE.MathUtils.degToRad(14)) * 1.05;
-    kit.cam.position.set(bs.center.x, bs.center.y + d * 0.35, bs.center.z + d * 0.94);
+    kit.cam.position.set(bs.center.x, bs.center.y + d * lift, bs.center.z + d * Math.sqrt(1 - lift * lift));
     kit.cam.lookAt(bs.center);
     kit.r.render(kit.scene, kit.cam);
     const url = kit.r.domElement.toDataURL('image/png');
-    cache.set(type, url);
+    cache.set(key, url);
     return url;
   } catch {
     return null;
