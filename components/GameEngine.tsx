@@ -85,19 +85,21 @@ const getVignette = () => {
   return vignette;
 };
 
-// Cloud shadow shape (three overlapping circles), blitted at 15% alpha.
+// Cloud shadow: three soft overlapping blobs, baked once and blitted faintly.
 let cloud: HTMLCanvasElement | null = null;
 const getCloud = () => {
   if (cloud) return cloud;
   cloud = document.createElement('canvas');
-  cloud.width = 200;
-  cloud.height = 150;
+  cloud.width = 240;
+  cloud.height = 180;
   const c = cloud.getContext('2d')!;
-  c.beginPath();
-  c.arc(90, 60, 60, 0, Math.PI * 2);
-  c.arc(130, 80, 70, 0, Math.PI * 2);
-  c.arc(50, 80, 50, 0, Math.PI * 2);
-  c.fill();
+  for (const [x, y, r] of [[110, 80, 70], [150, 100, 80], [70, 100, 60]]) {
+    const g = c.createRadialGradient(x, y, r * 0.3, x, y, r);
+    g.addColorStop(0, 'rgba(20,30,50,0.5)');
+    g.addColorStop(1, 'rgba(20,30,50,0)');
+    c.fillStyle = g;
+    c.fillRect(x - r, y - r, r * 2, r * 2);
+  }
   return cloud;
 };
 
@@ -171,7 +173,7 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
 
   useEffect(() => {
     SoundManager.getInstance().playBGM();
-    const t = setTimeout(() => setShowHelp(false), 7000);
+    const t = setTimeout(() => setShowHelp(false), touch ? 4500 : 7000);
     return () => clearTimeout(t);
   }, []);
 
@@ -491,6 +493,7 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
 
     player.x = x; player.y = y; player.direction = direction; player.isMoving = isMoving;
     runningRef.current = running && isMoving;
+    if (isMoving && showHelp) setShowHelp(false); // hint has done its job
 
     // Footsteps, and dust + speed streaks while running
     if (isMoving && now - lastStepTime.current > (running ? 190 : 300)) {
@@ -643,7 +646,8 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
     const bgCtx = backgroundCanvasRef.current.getContext('2d');
     if (!bgCtx) return;
     const { x, y } = currentScreen;
-    drawBackground(bgCtx, world.map[y]?.[x] || Biome.GRASS, dateSeed, x, y, isHouseScreen(x, y), world.riverY, world.bridgeX);
+    drawBackground(bgCtx, world.map[y]?.[x] || Biome.GRASS, dateSeed, x, y, isHouseScreen(x, y), world.riverY, world.bridgeX,
+      world.flowers.filter(f => f.screenX === x && f.screenY === y));
   }, [currentScreen, dateSeed, world]);
 
   // --- DRAWING ---
@@ -823,11 +827,11 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
   const drawClouds = (ctx: CanvasRenderingContext2D, now: number) => {
     const t = now / 20000; // Slow drift
     const img = getCloud();
-    ctx.globalAlpha = 0.15;
-    for (let i = 0; i < 5; i++) {
-      const x = ((t * (50 + i * 20)) + i * 200) % (CANVAS_WIDTH + 400) - 200;
-      const y = (i * 150 + Math.sin(t) * 50) % CANVAS_HEIGHT;
-      ctx.drawImage(img, x - 90, y - 60);
+    ctx.globalAlpha = 0.2;
+    for (let i = 0; i < 3; i++) {
+      const x = ((t * (50 + i * 20)) + i * 340) % (CANVAS_WIDTH + 400) - 200;
+      const y = (i * 260 + 60 + Math.sin(t) * 50) % CANVAS_HEIGHT;
+      ctx.drawImage(img, x - 110, y - 90);
     }
     ctx.globalAlpha = 1;
   };
@@ -906,8 +910,8 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
           {!touch && hud('desktop')}
 
           {showHelp && !talk && !notification && !(touch && !landscape) && (
-            <div className="absolute bottom-2 sm:bottom-4 left-1/2 -translate-x-1/2 w-max max-w-[94%] text-center bg-black/70 text-amber-100 px-3 py-1 rounded font-mono text-sm sm:text-lg leading-tight pointer-events-none z-20">
-              {touch ? 'Drag to walk · push the stick all the way to run' : 'WASD to walk · hold Shift to run · E to pick up'}
+            <div className={`absolute bottom-2 sm:bottom-4 left-1/2 -translate-x-1/2 w-max ${touch ? 'max-w-[60%]' : 'max-w-[94%]'} text-center bg-black/55 text-amber-100 px-2.5 py-0.5 rounded font-mono ${touch ? 'text-sm' : 'text-sm sm:text-lg'} leading-tight pointer-events-none z-20`}>
+              {touch ? 'Drag to walk · push all the way to run' : 'WASD to walk · hold Shift to run · E to pick up'}
             </div>
           )}
 

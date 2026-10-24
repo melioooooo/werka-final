@@ -109,30 +109,18 @@ export const FLOWER_COLORS: Record<FlowerType, string> = {
 };
 
 export const BIOME_COLORS: Record<Biome, string> = {
-  [Biome.GRASS]: '#4ade80',
-  [Biome.FOREST]: '#15803d',
-  [Biome.DESERT]: '#fed7aa',
-  [Biome.RIVER]: '#4ade80', // Base grass, river drawn on top
-  [Biome.TROPICAL]: '#14b8a6', // Teal-500 (lush tropical)
-  [Biome.MOUNTAIN]: '#78716c', // Stone-500 (rocky grey)
-  [Biome.MEADOW]: '#a3e635', // Lime-400 (bright meadow)
-  [Biome.SWAMP]: '#365314', // Lime-900 (murky dark green)
-  [Biome.TUNDRA]: '#e0f2fe', // Sky-100 (icy pale blue)
-  [Biome.ENCHANTED]: '#a855f7' // Purple-500 (magical purple)
+  [Biome.GRASS]: '#6cc15a',
+  [Biome.FOREST]: '#2f7d3c',
+  [Biome.DESERT]: '#f1cf9c',
+  [Biome.RIVER]: '#6cc15a', // Base grass, river drawn on top
+  [Biome.TROPICAL]: '#2aa98f', // Teal (lush tropical)
+  [Biome.MOUNTAIN]: '#857c72', // Stone (rocky grey)
+  [Biome.MEADOW]: '#9ccb4c', // Lime (bright meadow)
+  [Biome.SWAMP]: '#3d5822', // Lime-900-ish (murky dark green)
+  [Biome.TUNDRA]: '#dcebf2', // Sky-100-ish (icy pale blue)
+  [Biome.ENCHANTED]: '#9462c8' // Purple (magical purple)
 };
 
-export const BIOME_BG_COLORS: Record<Biome, string> = {
-  [Biome.GRASS]: '#4ade80',
-  [Biome.FOREST]: '#166534',
-  [Biome.DESERT]: '#fed7aa',
-  [Biome.RIVER]: '#22c55e',
-  [Biome.TROPICAL]: '#0d9488', // Teal-600 (darker tropical green)
-  [Biome.MOUNTAIN]: '#57534e', // Stone-600 (mountain grey)
-  [Biome.MEADOW]: '#84cc16', // Lime-500 (golden meadow)
-  [Biome.SWAMP]: '#1a2e05', // Very dark murky green
-  [Biome.TUNDRA]: '#bae6fd', // Sky-200 (icy blue)
-  [Biome.ENCHANTED]: '#7e22ce' // Purple-700 (deep magical purple)
-};
 
 
 // --- SEASONS CONFIG (REMOVED) ---

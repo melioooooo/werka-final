@@ -1,10 +1,10 @@
 import { Flower, FlowerType, Biome, Obstacle } from '../types';
-import { CANVAS_WIDTH, CANVAS_HEIGHT, HOUSE_RECT, BIOME_COLORS, BIOME_BG_COLORS } from '../constants';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, HOUSE_RECT, BIOME_COLORS } from '../constants';
 import { SeededRandom, BRIDGE_WIDTH } from './world';
 
 // Static ground layer for one screen; drawn once into an offscreen canvas when the screen changes.
 export const drawBackground = (ctx: CanvasRenderingContext2D, biome: Biome, dateSeed: string, sx: number, sy: number, house: boolean,
-  riverY: (globalX: number) => number, getBridgeX: (sx: number, sy: number) => number) => {
+  riverY: (globalX: number) => number, getBridgeX: (sx: number, sy: number) => number, flowers: Flower[] = []) => {
   const now = Date.now();
   const drawTerrainPatches = (ctx: CanvasRenderingContext2D, biome: Biome, seasonPalette: Record<Biome, string>) => {
     const rng = new SeededRandom(`${dateSeed}-${sx}-${sy}-terrain`);
@@ -247,24 +247,7 @@ export const drawBackground = (ctx: CanvasRenderingContext2D, biome: Biome, date
   };
 
   const drawContinuousRiver = (ctx: CanvasRenderingContext2D) => {
-    // Bank
-    ctx.fillStyle = '#eecfa1';
-    ctx.beginPath();
-    // Top bank
-    for (let x = 0; x <= CANVAS_WIDTH; x += 10) {
-      const globalX = sx * CANVAS_WIDTH + x;
-      const y = riverY(globalX);
-      ctx.lineTo(x, y - 48);
-    }
-    ctx.lineTo(CANVAS_WIDTH, CANVAS_HEIGHT);
-    ctx.lineTo(0, CANVAS_HEIGHT);
-    ctx.fill();
-
-    // Overdraw bottom with background color to create the strip
-    ctx.fillStyle = BIOME_BG_COLORS[Biome.RIVER];
-    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-
-    // Draw Bank again properly
+    // Bank (the grass texture under it is kept)
     ctx.fillStyle = '#eecfa1';
     ctx.beginPath();
     for (let x = 0; x <= CANVAS_WIDTH; x += 10) {
@@ -379,10 +362,117 @@ export const drawBackground = (ctx: CanvasRenderingContext2D, biome: Biome, date
 
   ctx.fillStyle = BIOME_COLORS[biome];
   ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+  const tex = new SeededRandom(`${dateSeed}-${sx}-${sy}-texture`); // own stream: older layers stay identical
+  drawGroundTexture(ctx, biome, tex, flowers);
   drawTerrainPatches(ctx, biome, BIOME_COLORS);
   drawGroundDetails(ctx, biome, BIOME_COLORS);
   if (biome === Biome.RIVER) drawContinuousRiver(ctx);
-  if (house) drawDetailedPath(ctx);
+  if (house) { drawDetailedPath(ctx); drawPathEdges(ctx, biome, tex); }
+};
+
+// --- Ground texture: pixel dithering, tonal patches, tufts, clover, pebbles, petals. Baked once per screen. ---
+const hex = (c: string) => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
+const mix = (a: string, b: string, t: number) => {
+  const A = hex(a), B = hex(b);
+  return `rgb(${A.map((v, i) => Math.round(v + (B[i] - v) * t)).join(',')})`;
+};
+// Shadows lean cool, lights lean warm, as in most cosy pixel-art palettes.
+const tone = (c: string, t: number) => (t < 0 ? mix(c, '#24304a', -t) : mix(c, '#fff3c4', t));
+const GRASSY = new Set([Biome.GRASS, Biome.RIVER, Biome.MEADOW, Biome.FOREST, Biome.TROPICAL, Biome.SWAMP, Biome.ENCHANTED]);
+const px = (ctx: CanvasRenderingContext2D, x: number, y: number, w = 2, h = 2) => ctx.fillRect(Math.round(x / 2) * 2, Math.round(y / 2) * 2, w, h);
+
+const tuft = (ctx: CanvasRenderingContext2D, x: number, y: number, dark: string, light: string, v: number) => {
+  ctx.fillStyle = dark;
+  const blades = v === 0 ? [[-2, 4], [0, 6], [2, 4]] : v === 1 ? [[-4, 4], [-2, 6], [2, 8], [4, 4]] : [[0, 6], [2, 4]];
+  for (const [dx, h] of blades) px(ctx, x + dx, y - h, 2, h);
+  ctx.fillStyle = light;
+  px(ctx, x + blades[1][0], y - blades[1][1]);
+};
+
+const drawGroundTexture = (ctx: CanvasRenderingContext2D, biome: Biome, rng: SeededRandom, flowers: Flower[]) => {
+  const base = BIOME_COLORS[biome];
+  const W = CANVAS_WIDTH, H = CANVAS_HEIGHT;
+  // big ragged tonal patches on a 4px grid
+  const tones = [tone(base, -0.1), tone(base, 0.09), tone(base, -0.16)];
+  for (let i = 0; i < 18; i++) {
+    const cx = rng.range(0, W), cy = rng.range(0, H), r = rng.range(30, 95);
+    ctx.fillStyle = tones[i % 3];
+    for (let y = cy - r; y < cy + r; y += 4) for (let x = cx - r * 1.4; x < cx + r * 1.4; x += 4) {
+      const d = Math.hypot((x - cx) / 1.4, y - cy) / r;
+      if (d + rng.next() * 0.3 < 1) ctx.fillRect(Math.round(x / 4) * 4, Math.round(y / 4) * 4, 4, 4);
+    }
+  }
+  // fine dithering
+  const dl = tone(base, 0.14), dd = tone(base, -0.14);
+  for (let i = 0; i < 3200; i++) { ctx.fillStyle = i % 2 ? dl : dd; px(ctx, rng.range(0, W), rng.range(0, H)); }
+
+  const dark = tone(base, -0.38), light = tone(base, 0.25);
+  if (GRASSY.has(biome)) {
+    // tufts, half of them in little clumps
+    for (let i = 0; i < 70; i++) {
+      const cx = rng.range(0, W), cy = rng.range(0, H);
+      for (let j = 0; j < 4; j++) tuft(ctx, cx + rng.range(-10, 10), cy + rng.range(-5, 5), dark, light, Math.floor(rng.next() * 3));
+    }
+    for (let i = 0; i < 140; i++) tuft(ctx, rng.range(0, W), rng.range(0, H), dark, light, Math.floor(rng.next() * 3));
+    // clover patches
+    const clover = tone(base, -0.2);
+    for (let i = 0; i < 10; i++) {
+      const cx = rng.range(0, W), cy = rng.range(0, H);
+      for (let j = 0; j < 7; j++) {
+        const x = cx + rng.range(-18, 18), y = cy + rng.range(-10, 10);
+        ctx.fillStyle = clover;
+        px(ctx, x, y); px(ctx, x + 2, y + 2); px(ctx, x - 2, y + 2);
+        if (rng.next() < 0.25) { ctx.fillStyle = '#fdfbf0'; px(ctx, x, y - 2); }
+      }
+    }
+  } else if (biome === Biome.DESERT) {
+    // wind ripples
+    for (let i = 0; i < 160; i++) {
+      const x = rng.range(0, W), y = rng.range(0, H), w = 6 + Math.floor(rng.next() * 4) * 2;
+      ctx.fillStyle = light; px(ctx, x, y, w, 2);
+      ctx.fillStyle = tone(base, -0.12); px(ctx, x + 2, y + 2, w, 2);
+    }
+    for (let i = 0; i < 40; i++) tuft(ctx, rng.range(0, W), rng.range(0, H), '#a3814f', '#d6b47a', Math.floor(rng.next() * 3));
+  } else if (biome === Biome.MOUNTAIN) {
+    // cracks and moss
+    ctx.fillStyle = dark;
+    for (let i = 0; i < 40; i++) {
+      let x = rng.range(0, W), y = rng.range(0, H);
+      for (let j = 0; j < 6; j++) { px(ctx, x, y); x += rng.range(-1, 3) * 2; y += 2; }
+    }
+    ctx.fillStyle = '#6f8a4e';
+    for (let i = 0; i < 120; i++) px(ctx, rng.range(0, W), rng.range(0, H));
+  } else if (biome === Biome.TUNDRA) {
+    ctx.fillStyle = '#ffffff';
+    for (let i = 0; i < 300; i++) px(ctx, rng.range(0, W), rng.range(0, H));
+    for (let i = 0; i < 40; i++) tuft(ctx, rng.range(0, W), rng.range(0, H), '#8aa39a', '#c9dbd3', Math.floor(rng.next() * 3));
+  }
+  // pebbles everywhere, a few more on rocky ground
+  const pebbles = biome === Biome.MOUNTAIN || biome === Biome.DESERT ? 90 : 35;
+  for (let i = 0; i < pebbles; i++) {
+    const x = rng.range(0, W), y = rng.range(0, H), g = rng.next() < 0.5 ? '#9b948c' : '#b7aea2';
+    ctx.fillStyle = tone(g, -0.25); px(ctx, x, y + 2, 4, 2);
+    ctx.fillStyle = g; px(ctx, x, y, 4, 2);
+    ctx.fillStyle = '#e7e2d8'; px(ctx, x, y);
+  }
+  // fallen petals around each flower
+  for (const f of flowers) {
+    ctx.fillStyle = f.color;
+    for (let j = 0; j < 3; j++) {
+      const a = rng.next() * Math.PI * 2, d = rng.range(7, 16);
+      px(ctx, f.x + Math.cos(a) * d, f.y + Math.sin(a) * d * 0.5, 2, 2);
+    }
+  }
+};
+
+// Grass tufts creeping over both edges of the stone path to the door.
+const drawPathEdges = (ctx: CanvasRenderingContext2D, biome: Biome, rng: SeededRandom) => {
+  const base = BIOME_COLORS[biome];
+  const dark = tone(base, -0.3), light = tone(base, 0.22);
+  for (let y = HOUSE_RECT.doorY + 8; y < CANVAS_HEIGHT; y += 7) {
+    const width = 50 + Math.sin(y / 40) * 15, cx = CANVAS_WIDTH / 2 + Math.sin(y / 70) * 25;
+    for (const side of [-1, 1]) if (rng.next() < 0.7) tuft(ctx, cx + side * (width / 2 + rng.range(-6, 2)), y, dark, light, Math.floor(rng.next() * 3));
+  }
 };
 
 // The cottage only changes with the lights, so both versions are cached; its shadow moves with the sun and is drawn live.

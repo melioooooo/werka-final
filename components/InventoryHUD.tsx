@@ -75,14 +75,14 @@ export const InventoryHUD: React.FC<InventoryHUDProps> = ({ inventory, pocket, k
     // Phone/iPad landscape: small panel floating top-left, over the gutter beside the game
     if (layout === 'side') {
         return (
-            <div className="absolute top-2 left-2 z-40 bg-black/65 rounded-lg border border-white/15 p-2 pointer-events-none select-none w-[148px]"
+            <div className="absolute top-1.5 left-1.5 z-40 bg-black/35 rounded-md px-1.5 py-1 pointer-events-none select-none w-[122px] backdrop-blur-[1px]"
                 style={{ marginLeft: 'env(safe-area-inset-left)' }}>
-                <div className="flex flex-wrap gap-1"><Basket inventory={inventory} size="w-[18px] h-[18px]" /></div>
-                <div className="flex flex-wrap gap-1 mt-1.5 text-[13px]"><Pocket pocket={pocket} size="w-[22px] h-[22px]" /></div>
-                <div className="flex justify-between items-center mt-1.5 text-sm leading-none">
+                <div className="flex flex-wrap gap-[3px]"><Basket inventory={inventory} size="w-[14px] h-[14px]" /></div>
+                <div className="flex flex-wrap gap-[3px] mt-1 text-[10px]"><Pocket pocket={pocket} size="w-[18px] h-[18px]" /></div>
+                <div className="flex justify-between items-center mt-1 text-xs leading-none">
                     <Kisses kisses={kisses} />
-                    <span className="text-yellow-400 font-bold">{inventory.length}/{MAX_INVENTORY}</span>
-                    <span className="text-gray-400">{timeLabel}</span>
+                    <span className="text-yellow-300 font-bold">{inventory.length}/{MAX_INVENTORY}</span>
+                    <span className="text-gray-300">{timeLabel}</span>
                 </div>
             </div>
         );

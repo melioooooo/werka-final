@@ -100,9 +100,11 @@ export const MobileControls: React.FC<MobileControlsProps> = ({ keys, prompt, on
       >
         {!stick && (overlay
           ? <div className="absolute left-10 bottom-10 w-28 h-28 rounded-full border-4 border-white/20 bg-white/5 pointer-events-none" />
-          : <div className="absolute inset-0 flex flex-col gap-2 items-center justify-center text-stone-500 pointer-events-none text-center px-2">
-              <span className="text-xs pixel-text">TOUCH TO MOVE</span>
-              <span className="text-sm font-mono">push the stick all the way to run</span>
+          : <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="w-28 h-28 rounded-full border-4 border-white/15 bg-white/5 flex flex-col items-center justify-center text-center text-stone-400">
+                <span className="text-[9px] pixel-text leading-tight">TOUCH<br />TO MOVE</span>
+              </div>
+              <span className="absolute bottom-2 inset-x-0 text-center text-xs font-mono text-stone-500">push all the way to run</span>
             </div>)}
         {stick && (
           <div className="fixed pointer-events-none" style={{ left: stick.ox - RADIUS, top: stick.oy - RADIUS, width: RADIUS * 2, height: RADIUS * 2 }}>
