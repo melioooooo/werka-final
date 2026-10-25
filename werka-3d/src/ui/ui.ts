@@ -239,14 +239,14 @@ export function intro(date: string, done: () => void) {
 }
 
 export function craft(inv: Item[], pocket: string[], icon: (type: string) => string | null, pocketIcon: (id: string) => string | null,
-  onCraft: (picked: number[], extras: number[]) => void, onCancel: () => void) {
+  onCraft: (picked: number[], extras: number[]) => void, onCancel: () => void, initial?: { picked: number[]; extras: number[] }) {
   const p = el(`<div class="panel"><div class="card" role="dialog" aria-label="Crafting table">
     <h2>Crafting table</h2><p class="sub">Choose up to ${MAX_BOUQUET_SIZE} flowers for today's bouquet.</p>
     <div class="grid"></div>
     <div class="keeps"${pocket.length ? '' : ' hidden'}><h3>Tie on a keepsake <span>up to ${MAX_EXTRAS}</span></h3><div class="extras"></div></div>
     <div class="row"><button class="btn ghost back">Back</button><span class="count"></span>
-    <button class="btn petal make">Tie the bouquet</button></div></div></div>`);
-  const sel = new Set<number>(), ext = new Set<number>();
+    <button class="btn petal make">Arrange it</button></div></div></div>`);
+  const sel = new Set<number>(initial?.picked), ext = new Set<number>(initial?.extras);
   const grid = $(p, '.grid'), extras = $(p, '.extras');
   const pic = (it: Item) => {
     const url = icon(it.type);
@@ -278,8 +278,37 @@ export function craft(inv: Item[], pocket: string[], icon: (type: string) => str
   if (!inv.length) $(p, '.sub').textContent = 'Your basket is empty. Go pick some flowers first.';
 }
 
+// Arranging the bouquet on the canvas: toolbar at the bottom, tools for the selected piece above it.
+export function arrange(o: { onShuffle: () => void; onBack: () => void; onDone: () => void; onTurn: (d: number) => void; onScale: (d: number) => void }) {
+  const a = el(`<div class="arrange" role="region" aria-label="Arrange your bouquet">
+    <div class="top"><h2>Arrange your bouquet</h2><p>${touch ? 'Drag to turn it, pinch to zoom. Press a flower or a keepsake, then drag it where you like.' : 'Drag to turn it, scroll to zoom. Click a flower or a keepsake, then drag it where you like.'}</p></div>
+    <div class="tools" hidden><span class="name"></span>
+      <button class="tool" data-t="-1" aria-label="Turn left">&#x27F2;</button><button class="tool" data-t="1" aria-label="Turn right">&#x27F3;</button>
+      <span class="sz"><button class="tool" data-s="-1" aria-label="Smaller">&minus;</button><button class="tool" data-s="1" aria-label="Bigger">+</button></span></div>
+    <div class="bar"><button class="btn ghost back">Back</button><button class="btn ghost shuffle">Shuffle</button><button class="btn petal done">Tie the bouquet</button></div></div>`);
+  const tools = $(a, '.tools');
+  a.onclick = e => {
+    const b = (e.target as HTMLElement).closest<HTMLElement>('button');
+    if (!b) return;
+    if (b.dataset.t) o.onTurn(Number(b.dataset.t) * 0.35);
+    else if (b.dataset.s) o.onScale(Number(b.dataset.s) * 0.1);
+    else if (b.classList.contains('shuffle')) o.onShuffle();
+    else if (b.classList.contains('back')) { close(); o.onBack(); }
+    else if (b.classList.contains('done')) { close(); o.onDone(); }
+  };
+  const key = (e: KeyboardEvent) => { if (e.code === 'Escape') { close(); o.onBack(); } };
+  addEventListener('keydown', key);
+  const close = () => { removeEventListener('keydown', key); a.remove(); };
+  return {
+    select(name: string | null, extra: boolean) {
+      tools.hidden = !name;
+      if (name) { $(tools, '.name').textContent = name; $(tools, '.sz').hidden = !extra; }
+    },
+  };
+}
+
 export function gallery(list: Bouquet[], pocketIcon: (id: string) => string | null, onShow: (b: Bouquet | null) => void, onClose: () => void) {
-  const g = el(`<div class="gallery" role="region" aria-label="Gallery"><h2>Gallery</h2><ul></ul>
+  const g = el(`<div class="gallery" role="region" aria-label="Gallery"><h2>Gallery</h2><p class="ghint">${touch ? 'Drag to turn, pinch to zoom.' : 'Drag to turn, scroll to zoom.'}</p><ul></ul>
     <div class="row"><button class="btn close">Back</button></div></div>`);
   const ul = $(g, 'ul');
   let cur = 0;

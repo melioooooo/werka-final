@@ -3,7 +3,8 @@ import { Player, Flower, Biome, Obstacle, WorldItem } from '../types';
 import { InventoryHUD } from './InventoryHUD';
 import { MobileControls, useIsTouch, useIsLandscape } from './MobileControls';
 import { SoundManager } from '../utils/SoundManager';
-import { makeWorld, SeededRandom, BRIDGE_WIDTH, SPAWN, isHouseScreen } from '../utils/world';
+import { makeWorld, SeededRandom, SPAWN, isHouseScreen, pondNorm, FEET, riverDepth, onBridge } from '../utils/world';
+import { loadCritters, updateCritters, setCritterFlowers, setCritterView, drawCrittersWater, addGroundCritters, drawGroundCritter, drawCrittersAir, drawFireflies, nightOf, critterDebug } from '../utils/critters';
 import { drawBackground, drawHouse, drawTree, drawRock, drawFlower, drawItem, drawElio, drawElioPeek, elioHide, drawBang, drawHeart, elioPortrait } from '../utils/draw';
 import { newCamera, makeScene, blitCamera } from '../utils/camera';
 import {
@@ -14,6 +15,7 @@ import {
   MAX_INVENTORY,
   MAX_POCKET,
   POCKET_INFO,
+  rarityOf,
   RUN_MULT,
   HOUSE_SCREEN,
   PLAYER_SPRITES,
@@ -44,7 +46,7 @@ interface Particle {
   vy: number;
   life: number;
   maxLife: number;
-  type: 'LEAF' | 'SPORE' | 'FIREFLY' | 'RIPPLE' | 'SMOKE' | 'WIND' | 'BIRD' | 'DUST' | 'SPEED' | 'HEART';
+  type: 'LEAF' | 'SPORE' | 'FIREFLY' | 'RIPPLE' | 'SMOKE' | 'WIND' | 'BIRD' | 'DUST' | 'SPEED' | 'HEART' | 'SPARK';
   color: string;
   size: number;
 }
@@ -194,7 +196,15 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
   useEffect(() => {
     screenRef.current = currentScreen;
     obstaclesRef.current = world.obstacles[currentScreen.y][currentScreen.x];
+    const { x: sx, y: sy } = currentScreen;
+    const obs = world.obstacles[sy][sx], ponds = world.ponds[sy][sx], river = world.map[sy][sx] === Biome.RIVER;
+    loadCritters(world.critters[sy][sx], {
+      sx, river, riverY: world.riverY, bridgeX: river ? world.bridgeX(sx, sy) : -1e9, ponds,
+      dry: (x, y) => !obs.some(o => x > o.x - 10 && x < o.x + o.width + 10 && y > o.y - 10 && y < o.y + o.height + 10) &&
+        !ponds.some(p => pondNorm(p, x, y, 16) < 1) && !(river && Math.abs(y - world.riverY(sx * CANVAS_WIDTH + x)) < 50),
+    });
   }, [currentScreen, world]);
+  useEffect(() => setCritterFlowers(screenFlowers), [screenFlowers]);
 
   // Load Sprites
   useEffect(() => {
@@ -264,6 +274,7 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
       },
       player: () => ({ ...playerRef.current, screen: screenRef.current, running: runningRef.current }),
       setTime: (t: number) => { timeRef.current = t; },
+      critters: critterDebug,
     };
   }, [world]);
 
@@ -326,12 +337,12 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
           vx: isRight ? (2 + Math.random()) : -(2 + Math.random()), vy: (Math.random() - 0.5) * 0.5,
           life: 0, maxLife: 400, type: 'BIRD', color: '#000', size: 3
         });
-      } else if (isNight || type !== 'SPORE') { // Only spawn spores during day
+      } else if (type === 'LEAF' || (type === 'SPORE' && isNight)) { // fireflies are critters now
         spawn({
           x: Math.random() * CANVAS_WIDTH, y: Math.random() * CANVAS_HEIGHT,
           vx: (Math.random() - 0.5) * 0.5, vy: (Math.random() - 0.5) * 0.5,
           life: 0, maxLife: 150, type,
-          color: type === 'FIREFLY' ? '#facc15' : (type === 'LEAF' ? '#a16207' : '#f0fdf4'),
+          color: type === 'LEAF' ? '#a16207' : '#f0fdf4',
           size: Math.random() * 3 + 1
         });
       }
@@ -357,14 +368,14 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
         });
       }
 
-      // Ambient
-      const type = isNight ? 'FIREFLY' : (biome === Biome.FOREST ? 'LEAF' : 'SPORE');
-      if (isNight || type !== 'SPORE') {
+      // Ambient (night glow comes from the firefly critters)
+      const type = biome === Biome.FOREST ? 'LEAF' : 'SPORE';
+      if (!isNight && type === 'LEAF') {
         spawn({
           x: Math.random() * CANVAS_WIDTH, y: Math.random() * CANVAS_HEIGHT,
           vx: (Math.random() - 0.5) * 0.5, vy: (Math.random() - 0.5) * 0.5,
           life: 0, maxLife: 150, type,
-          color: type === 'FIREFLY' ? '#facc15' : (type === 'LEAF' ? '#a16207' : '#f0fdf4'),
+          color: '#a16207',
           size: Math.random() * 3 + 1
         });
       }
@@ -380,7 +391,7 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
       p.x += p.vx; p.y += p.vy; p.life++;
       if (p.type === 'SMOKE') { p.size += 0.05; p.x += Math.sin(p.life / 20) * 0.5; }
       else if (p.type === 'FIREFLY') { p.x += wob * 0.5; p.y += wobC * 0.5; }
-      else if (p.type === 'HEART') { p.vy += 0.02; p.vx *= 0.98; }
+      else if (p.type === 'HEART' || p.type === 'SPARK') { p.vy += 0.02; p.vx *= 0.98; }
       else if (p.type === 'DUST') { p.size += 0.15; }
       else if (p.type === 'BIRD') {
         p.y += wob * 0.2;
@@ -399,6 +410,7 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
 
     const player = playerRef.current;
     const keys = keysPressed.current;
+    updateCritters(dt, player.x, player.y, now, nightOf(timeRef.current));
 
     if (talkRef.current) {
       keys.delete('Space');
@@ -467,14 +479,21 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
         }
       }
 
+      // Ponds: same rule as the river, never walk in, always allowed to walk out
+      if (!screenChanged && !blocked) {
+        for (const p of world.ponds[nsy][nsx]) {
+          const n = pondNorm(p, nextX, nextY + FEET, 2);
+          if (n < 1 && n <= pondNorm(p, x, y + FEET, 2)) { blocked = true; break; }
+        }
+      }
+
       // River Collision with Continuity
       if (!screenChanged && !blocked && world.map[nsy]?.[nsx] === Biome.RIVER) {
-        const riverDist = Math.abs(nextY - world.riverY(nsx * CANVAS_WIDTH + nextX));
-        const onBridge = Math.abs(nextX - world.bridgeX(nsx, nsy)) < BRIDGE_WIDTH / 2;
-        if (!onBridge && riverDist < 35) {
-          // If already stuck (current pos in river), allow moving OUT (increasing distance)
-          const currentDist = Math.abs(y - world.riverY(screenRef.current.x * CANVAS_WIDTH + x));
-          blocked = !(currentDist < 35 && riverDist > currentDist);
+        const next = riverDepth(nextY - world.riverY(nsx * CANVAS_WIDTH + nextX));
+        if (!onBridge(nextX, world.bridgeX(nsx, nsy)) && next > 0) {
+          // If already stuck (current pos in river), allow moving OUT (getting shallower)
+          const cur = riverDepth(y - world.riverY(screenRef.current.x * CANVAS_WIDTH + x));
+          blocked = onBridge(x, world.bridgeX(nsx, nsy)) || !(cur > 0 && next < cur); // never step off the bridge sideways
         }
       }
 
@@ -587,16 +606,23 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
       burst(item.x, item.y - 20, 6);
       flash(`${info.emoji} ${info.name}! (${kisses + 1} total)`, 1600);
     } else {
-      SoundManager.getInstance().playSFX('PICK');
-      flash(`${info.emoji} Found ${info.name}`, 1400);
+      const rar = rarityOf(item.kind);
+      if (rar === 'rare' || rar === 'very_rare') {
+        SoundManager.getInstance().playSFX('RARE');
+        burst(item.x, item.y - 16, rar === 'very_rare' ? 10 : 6, true);
+        flash(`✨ A ${rar === 'very_rare' ? 'very rare' : 'rare'} ${info.name}!`, 2400);
+      } else {
+        SoundManager.getInstance().playSFX('PICK');
+        flash(`${info.emoji} Found ${info.name}`, 1400);
+      }
     }
   };
 
-  const burst = (x: number, y: number, n: number) => {
+  const burst = (x: number, y: number, n: number, sparkle = false) => {
     for (let i = 0; i < n; i++) {
       const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.2;
       const v = 1.5 + Math.random() * 2;
-      spawn({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0, maxLife: 60 + Math.random() * 30, type: 'HEART', color: '', size: 1 });
+      spawn({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0, maxLife: 60 + Math.random() * 30, type: sparkle ? 'SPARK' : 'HEART', color: '', size: 1 });
     }
   };
 
@@ -647,7 +673,7 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
     if (!bgCtx) return;
     const { x, y } = currentScreen;
     drawBackground(bgCtx, world.map[y]?.[x] || Biome.GRASS, dateSeed, x, y, isHouseScreen(x, y), world.riverY, world.bridgeX,
-      world.flowers.filter(f => f.screenX === x && f.screenY === y));
+      world.flowers.filter(f => f.screenX === x && f.screenY === y), world.ponds[y][x]);
   }, [currentScreen, dateSeed, world]);
 
   // --- DRAWING ---
@@ -667,6 +693,9 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
     const player = playerRef.current;
 
     if (backgroundCanvasRef.current) ctx.drawImage(backgroundCanvasRef.current, 0, 0);
+    const cam = camRef.current;
+    if (touch) setCritterView(cam.x, cam.y, cam.vw, cam.vh); else setCritterView(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    drawCrittersWater(ctx, now);
 
     // Depth-sorted scene, entries reused from a pool
     const pool = renderPool.current;
@@ -682,6 +711,7 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
     for (const t of screenItems) add(t.y, 2, t);
     if (elioHere) add(elioPopRef.current === 0 ? elioHide(world.elio.cover!, world.elio.x).sortY : world.elio.y, 3, world.elio);
     add(player.y, 4, player);
+    addGroundCritters(add, 5);
     list.sort(byY);
 
     for (const e of list) {
@@ -693,12 +723,15 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
       } else if (e.k === 1) drawFlower(ctx, e.o, now, time);
       else if (e.k === 2) drawItem(ctx, e.o.kind, e.o.x, e.o.y, now, near(player.x, player.y, e.o.x, e.o.y, 90));
       else if (e.k === 3) drawElioNow(ctx, now, time);
-      else drawPlayer(ctx, player, now);
+      else if (e.k === 4) drawPlayer(ctx, player, now);
+      else drawGroundCritter(ctx, e.o, now);
     }
 
+    drawCrittersAir(ctx, now);
     drawParticles(ctx, now);
     drawClouds(ctx, now);
     drawDayNightCycle(ctx);
+    drawFireflies(ctx, now, nightOf(time));
     if (touch) blitCamera(view, sceneRef.current!, camRef.current, player.x, player.y - 30, now);
   };
 
@@ -798,6 +831,15 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
 
       if (p.type === 'HEART') {
         drawHeart(ctx, p.x, p.y, 1 - p.life / p.maxLife);
+        continue;
+      }
+      if (p.type === 'SPARK') {
+        // little white-gold 4-point twinkles for rare finds
+        ctx.globalAlpha = Math.max(0, 1 - p.life / p.maxLife);
+        ctx.fillStyle = p.life % 8 < 4 ? '#ffffff' : '#fde68a';
+        ctx.fillRect(Math.round(p.x) - 3, Math.round(p.y) - 1, 6, 2);
+        ctx.fillRect(Math.round(p.x) - 1, Math.round(p.y) - 3, 2, 6);
+        ctx.globalAlpha = 1;
         continue;
       }
 

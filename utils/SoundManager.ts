@@ -27,7 +27,7 @@ export class SoundManager {
         console.log("Playing BGM (Placeholder)");
     }
 
-    public playSFX(type: 'STEP' | 'PICK' | 'ENTER' | 'CRAFT' | 'CHIME') {
+    public playSFX(type: 'STEP' | 'PICK' | 'ENTER' | 'CRAFT' | 'CHIME' | 'FLAP' | 'RIBBIT' | 'PLOP' | 'RARE') {
         if (this.isMuted || !this.audioContext) return;
 
         // Resume context if suspended (browser policy)
@@ -86,6 +86,54 @@ export class SoundManager {
                 gain.gain.linearRampToValueAtTime(0, now + 0.5);
                 osc.start(now);
                 osc.stop(now + 0.5);
+                break;
+
+            case 'FLAP':
+                // Soft flutter: quick wobbling whoosh
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(320, now);
+                for (let i = 1; i <= 5; i++) osc.frequency.setValueAtTime(i % 2 ? 420 : 300, now + i * 0.035);
+                gain.gain.setValueAtTime(0.035, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+                osc.start(now);
+                osc.stop(now + 0.22);
+                break;
+
+            case 'RIBBIT':
+                // Two low croaks
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(190, now);
+                osc.frequency.exponentialRampToValueAtTime(120, now + 0.09);
+                osc.frequency.setValueAtTime(200, now + 0.13);
+                osc.frequency.exponentialRampToValueAtTime(110, now + 0.24);
+                gain.gain.setValueAtTime(0.0001, now);
+                gain.gain.linearRampToValueAtTime(0.025, now + 0.01);
+                gain.gain.linearRampToValueAtTime(0.0001, now + 0.1);
+                gain.gain.linearRampToValueAtTime(0.025, now + 0.14);
+                gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.26);
+                osc.start(now);
+                osc.stop(now + 0.27);
+                break;
+
+            case 'PLOP':
+                // Water plop: falling sine blip
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(900, now);
+                osc.frequency.exponentialRampToValueAtTime(180, now + 0.12);
+                gain.gain.setValueAtTime(0.06, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+                osc.start(now);
+                osc.stop(now + 0.16);
+                break;
+
+            case 'RARE':
+                // Sparkly four-note arpeggio for rare finds
+                osc.type = 'sine';
+                [1047, 1319, 1568, 2093].forEach((f, i) => osc.frequency.setValueAtTime(f, now + i * 0.08));
+                gain.gain.setValueAtTime(0.08, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+                osc.start(now);
+                osc.stop(now + 0.8);
                 break;
 
             case 'CHIME':

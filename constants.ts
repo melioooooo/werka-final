@@ -143,16 +143,18 @@ export const HOUSE_RECT = {
 export const MAX_INVENTORY = 12;
 export const MAX_BOUQUET_SIZE = 8;
 
-export const MAX_POCKET = 8; // golden kiss does not count
-export const MAX_EXTRAS = 2;
+export const MAX_POCKET = 16; // golden kiss does not count
+export const MAX_EXTRAS = 6;
 export const RUN_MULT = 1.7;
 
-export interface PocketInfo { name: string; emoji: string; color: string; biomes?: Biome[] }
+export type Rarity = 'common' | 'uncommon' | 'rare' | 'very_rare';
+export const RARITY_WEIGHT: Record<Rarity, number> = { common: 1, uncommon: 0.5, rare: 0.2, very_rare: 0.07 };
+export interface PocketInfo { name: string; emoji: string; color: string; biomes?: Biome[]; rarity?: Rarity; shell?: boolean }
 
 export const TRINKETS: Record<string, PocketInfo> = {
   ribbon: { name: 'Silk Ribbon', emoji: '🎀', color: '#f472b6', biomes: [Biome.GRASS, Biome.MEADOW] },
   button: { name: 'Lost Button', emoji: '🔘', color: '#94a3b8', biomes: [Biome.GRASS, Biome.RIVER] },
-  shell: { name: 'Seashell', emoji: '🐚', color: '#fcd5ce', biomes: [Biome.RIVER, Biome.TROPICAL, Biome.SWAMP] },
+  shell: { name: 'Seashell', emoji: '🐚', color: '#fcd5ce', biomes: [Biome.RIVER, Biome.TROPICAL, Biome.SWAMP], shell: true },
   marble: { name: 'Glass Marble', emoji: '🔮', color: '#818cf8', biomes: [Biome.DESERT, Biome.ENCHANTED] },
   feather: { name: 'Blue Feather', emoji: '🪶', color: '#38bdf8', biomes: [Biome.FOREST, Biome.MOUNTAIN] },
   key: { name: 'Old Key', emoji: '🗝️', color: '#d4a017', biomes: [Biome.FOREST, Biome.DESERT] },
@@ -160,8 +162,22 @@ export const TRINKETS: Record<string, PocketInfo> = {
   acorn: { name: 'Lucky Acorn', emoji: '🌰', color: '#a16207', biomes: [Biome.FOREST, Biome.MEADOW] },
   pebble: { name: 'Heart Pebble', emoji: '🪨', color: '#a8a29e', biomes: [Biome.MOUNTAIN, Biome.TUNDRA] },
   butterfly: { name: 'Butterfly Charm', emoji: '🦋', color: '#a78bfa', biomes: [Biome.ENCHANTED, Biome.TROPICAL] },
-  star: { name: 'Fallen Star', emoji: '⭐', color: '#fde047', biomes: [Biome.ENCHANTED, Biome.TUNDRA] }, // rare
+  star: { name: 'Fallen Star', emoji: '⭐', color: '#fde047', biomes: [Biome.ENCHANTED, Biome.TUNDRA], rarity: 'rare' },
+  // v4 seashell family: mostly on shores (river banks, pond edges)
+  pink_shell: { name: 'Pink Conch', emoji: '🐚', color: '#f9a8d4', biomes: [Biome.RIVER, Biome.TROPICAL], rarity: 'uncommon', shell: true },
+  scallop: { name: 'Scallop Shell', emoji: '🐚', color: '#fdba74', biomes: [Biome.RIVER, Biome.SWAMP, Biome.TROPICAL], shell: true },
+  spiral_shell: { name: 'Spiral Shell', emoji: '🐚', color: '#e7d3b0', biomes: [Biome.SWAMP, Biome.RIVER], rarity: 'uncommon', shell: true },
+  pearl: { name: 'Pearl', emoji: '⚪', color: '#f8fafc', biomes: [Biome.RIVER, Biome.TROPICAL], rarity: 'rare', shell: true },
+  black_pearl: { name: 'Black Pearl', emoji: '⚫', color: '#475569', biomes: [Biome.TROPICAL, Biome.SWAMP], rarity: 'very_rare', shell: true },
+  // v4 trinkets
+  clover: { name: 'Four-leaf Clover', emoji: '🍀', color: '#4ade80', biomes: [Biome.GRASS, Biome.MEADOW], rarity: 'uncommon' },
+  crystal: { name: 'Ice Crystal', emoji: '💎', color: '#a5f3fc', biomes: [Biome.TUNDRA, Biome.MOUNTAIN], rarity: 'uncommon' },
+  amber: { name: 'Amber Drop', emoji: '🟠', color: '#f59e0b', biomes: [Biome.FOREST, Biome.DESERT], rarity: 'uncommon' },
+  moon_charm: { name: 'Moon Charm', emoji: '🌙', color: '#c4b5fd', biomes: [Biome.ENCHANTED], rarity: 'rare' },
+  ladybug: { name: 'Ladybug Pin', emoji: '🐞', color: '#ef4444', biomes: [Biome.MEADOW, Biome.GRASS, Biome.FOREST] },
+  bell: { name: 'Tiny Bell', emoji: '🔔', color: '#facc15', biomes: [Biome.MOUNTAIN, Biome.GRASS], rarity: 'uncommon' },
 };
+export const rarityOf = (k: string): Rarity => TRINKETS[k]?.rarity ?? 'common';
 
 export const POCKET_INFO: Record<string, PocketInfo> = {
   ...TRINKETS,

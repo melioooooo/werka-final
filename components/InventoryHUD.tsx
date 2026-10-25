@@ -1,6 +1,7 @@
 import React from 'react';
 import { Flower } from '../types';
 import { MAX_INVENTORY, MAX_POCKET, POCKET_INFO } from '../constants';
+import { itemIcon } from '../utils/draw';
 
 interface InventoryHUDProps {
     inventory: Flower[];
@@ -26,8 +27,16 @@ const Basket: React.FC<{ inventory: Flower[]; size: string }> = ({ inventory, si
     </>
 );
 
-// Trinkets and kisses; the golden kiss gets its own slot past the 8.
-const Pocket: React.FC<{ pocket: string[]; size: string }> = ({ pocket, size }) => {
+// Same pixel art as in the world, so the five kinds of shell stay tellable apart.
+export const ItemIcon: React.FC<{ kind: string; className?: string }> = ({ kind, className = 'w-[78%] h-[78%]' }) => {
+    const src = itemIcon(kind);
+    return src
+        ? <img src={src} alt={POCKET_INFO[kind]?.name ?? kind} className={`${className} object-contain`} style={{ imageRendering: 'pixelated' }} draggable={false} />
+        : <span>{POCKET_INFO[kind]?.emoji ?? '?'}</span>;
+};
+
+// Trinkets and kisses; the golden kiss gets its own slot past the 16. compact: only filled slots plus a count (phones).
+const Pocket: React.FC<{ pocket: string[]; size: string; compact?: boolean }> = ({ pocket, size, compact }) => {
     const normal = pocket.filter(k => k !== 'golden_kiss');
     const golden = pocket.filter(k => k === 'golden_kiss');
     const slot = (k: string | undefined, key: string, gold = false) => (
@@ -37,13 +46,14 @@ const Pocket: React.FC<{ pocket: string[]; size: string }> = ({ pocket, size }) 
                 ${gold ? 'border-yellow-300 bg-yellow-400/30 shadow-[0_0_6px_rgba(250,204,21,0.8)]' : k ? 'border-white/50 bg-white/15' : 'border-white/15 bg-white/5'}`}
             title={k ? POCKET_INFO[k]?.name : undefined}
         >
-            {k ? POCKET_INFO[k]?.emoji : ''}
+            {k ? <ItemIcon kind={k} /> : ''}
         </div>
     );
     return (
         <>
-            {Array.from({ length: MAX_POCKET }).map((_, i) => slot(normal[i], `p${i}`))}
+            {(compact ? normal : Array.from({ length: MAX_POCKET }, (_, i) => normal[i])).map((k, i) => slot(k, `p${i}`))}
             {golden.map((k, i) => slot(k, `g${i}`, true))}
+            {compact && <span className="text-white/50 text-xs self-center whitespace-nowrap">{normal.length}/{MAX_POCKET}</span>}
         </>
     );
 };
@@ -62,7 +72,7 @@ export const InventoryHUD: React.FC<InventoryHUDProps> = ({ inventory, pocket, k
                     <span className="text-yellow-400 text-base font-bold leading-none">{inventory.length}/{MAX_INVENTORY}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                    <div className="flex flex-wrap gap-1 flex-1 text-[15px]"><Pocket pocket={pocket} size="w-[26px] h-[26px]" /></div>
+                    <div className="flex flex-wrap gap-1 flex-1 text-[15px] min-h-[26px]"><Pocket pocket={pocket} size="w-[26px] h-[26px]" compact /></div>
                     <div className="flex flex-col items-end leading-none text-base">
                         <Kisses kisses={kisses} />
                         <span className="text-gray-400 text-sm">{timeLabel}</span>
@@ -78,7 +88,7 @@ export const InventoryHUD: React.FC<InventoryHUDProps> = ({ inventory, pocket, k
             <div className="absolute top-1.5 left-1.5 z-40 bg-black/35 rounded-md px-1.5 py-1 pointer-events-none select-none w-[122px] backdrop-blur-[1px]"
                 style={{ marginLeft: 'env(safe-area-inset-left)' }}>
                 <div className="flex flex-wrap gap-[3px]"><Basket inventory={inventory} size="w-[14px] h-[14px]" /></div>
-                <div className="flex flex-wrap gap-[3px] mt-1 text-[10px]"><Pocket pocket={pocket} size="w-[18px] h-[18px]" /></div>
+                <div className="flex flex-wrap gap-[3px] mt-1 text-[10px]"><Pocket pocket={pocket} size="w-[18px] h-[18px]" compact /></div>
                 <div className="flex justify-between items-center mt-1 text-xs leading-none">
                     <Kisses kisses={kisses} />
                     <span className="text-yellow-300 font-bold">{inventory.length}/{MAX_INVENTORY}</span>
@@ -94,7 +104,7 @@ export const InventoryHUD: React.FC<InventoryHUDProps> = ({ inventory, pocket, k
             <h2 className="text-xl text-yellow-400 mb-2 pixel-text">Inventory</h2>
             <div className="flex gap-1 flex-wrap max-w-[200px]"><Basket inventory={inventory} size="w-6 h-6" /></div>
             <h2 className="text-sm text-pink-300 mt-3 mb-1.5 pixel-text">Pocket</h2>
-            <div className="flex gap-1 flex-wrap max-w-[200px] text-base"><Pocket pocket={pocket} size="w-7 h-7" /></div>
+            <div className="flex gap-1 flex-wrap max-w-[220px] text-base"><Pocket pocket={pocket} size="w-6 h-6" /></div>
             <div className="mt-3 flex justify-between items-center text-xs text-gray-300 font-bold gap-3">
                 <span className="opacity-70">{timeLabel}</span>
                 <Kisses kisses={kisses} className="text-sm" />

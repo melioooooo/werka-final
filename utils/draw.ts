@@ -1,10 +1,10 @@
 import { Flower, FlowerType, Biome, Obstacle } from '../types';
-import { CANVAS_WIDTH, CANVAS_HEIGHT, HOUSE_RECT, BIOME_COLORS } from '../constants';
-import { SeededRandom, BRIDGE_WIDTH } from './world';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, HOUSE_RECT, BIOME_COLORS, rarityOf } from '../constants';
+import { SeededRandom, BRIDGE_WIDTH, Pond, pondNorm } from './world';
 
 // Static ground layer for one screen; drawn once into an offscreen canvas when the screen changes.
 export const drawBackground = (ctx: CanvasRenderingContext2D, biome: Biome, dateSeed: string, sx: number, sy: number, house: boolean,
-  riverY: (globalX: number) => number, getBridgeX: (sx: number, sy: number) => number, flowers: Flower[] = []) => {
+  riverY: (globalX: number) => number, getBridgeX: (sx: number, sy: number) => number, flowers: Flower[] = [], ponds: Pond[] = []) => {
   const now = Date.now();
   const drawTerrainPatches = (ctx: CanvasRenderingContext2D, biome: Biome, seasonPalette: Record<Biome, string>) => {
     const rng = new SeededRandom(`${dateSeed}-${sx}-${sy}-terrain`);
@@ -367,6 +367,8 @@ export const drawBackground = (ctx: CanvasRenderingContext2D, biome: Biome, date
   drawTerrainPatches(ctx, biome, BIOME_COLORS);
   drawGroundDetails(ctx, biome, BIOME_COLORS);
   if (biome === Biome.RIVER) drawContinuousRiver(ctx);
+  const prng = new SeededRandom(`${dateSeed}-${sx}-${sy}-pond-art`);
+  for (const p of ponds) drawPond(ctx, p, biome, prng);
   if (house) { drawDetailedPath(ctx); drawPathEdges(ctx, biome, tex); }
 };
 
@@ -461,6 +463,60 @@ const drawGroundTexture = (ctx: CanvasRenderingContext2D, biome: Biome, rng: See
     for (let j = 0; j < 3; j++) {
       const a = rng.next() * Math.PI * 2, d = rng.range(7, 16);
       px(ctx, f.x + Math.cos(a) * d, f.y + Math.sin(a) * d * 0.5, 2, 2);
+    }
+  }
+};
+
+// Pond on a 4px grid: ragged rim (sand or mud), water darkening toward the middle, light ripples, reeds and lily pads.
+const POND_LOOK: Partial<Record<Biome, { rim: string; rim2: string; w: [string, string, string] }>> = {
+  [Biome.SWAMP]: { rim: '#5d4f31', rim2: '#4a3f27', w: ['#5b8a6a', '#4a7759', '#3b6449'] },
+  [Biome.TROPICAL]: { rim: '#f3dfae', rim2: '#e6c98d', w: ['#5eead4', '#2dd4bf', '#14b8a6'] },
+};
+const drawPond = (ctx: CanvasRenderingContext2D, p: Pond, biome: Biome, rng: SeededRandom) => {
+  const look = POND_LOOK[biome] ?? { rim: '#c9b48a', rim2: '#a8936a', w: ['#7cc7ec', '#4fb3e8', '#3b97d3'] as [string, string, string] };
+  const pad = 14;
+  for (let y = p.y - p.ry - pad; y <= p.y + p.ry + pad; y += 4) {
+    for (let x = p.x - p.rx - pad; x <= p.x + p.rx + pad; x += 4) {
+      const gx = Math.round(x / 4) * 4, gy = Math.round(y / 4) * 4;
+      const jitter = rng.next() * 0.06;
+      const n = pondNorm(p, gx + 2, gy + 2);
+      const rimN = pondNorm(p, gx + 2, gy + 2, pad);
+      if (n + jitter < 0.92) ctx.fillStyle = n < 0.5 ? look.w[2] : n < 0.78 ? look.w[1] : look.w[0];
+      else if (n + jitter < 1) ctx.fillStyle = look.rim2; // wet edge
+      else if (rimN + jitter * 2 < 1) ctx.fillStyle = look.rim;
+      else continue;
+      ctx.fillRect(gx, gy, 4, 4);
+    }
+  }
+  // ripples
+  ctx.fillStyle = 'rgba(255,255,255,0.45)';
+  for (let i = 0; i < 6; i++) {
+    const a = rng.next() * Math.PI * 2, d = rng.range(0.2, 0.7);
+    px(ctx, p.x + Math.cos(a) * p.rx * d, p.y + Math.sin(a) * p.ry * d, 6 + Math.floor(rng.next() * 3) * 2, 2);
+  }
+  // lily pads (not in the tropical lagoon)
+  if (biome !== Biome.TROPICAL) {
+    for (let i = 0; i < 3; i++) {
+      const a = rng.next() * Math.PI * 2, d = rng.range(0.35, 0.7);
+      const x = p.x + Math.cos(a) * p.rx * d, y = p.y + Math.sin(a) * p.ry * d;
+      ctx.fillStyle = '#2f7d3c'; px(ctx, x - 6, y - 2, 12, 6); px(ctx, x - 4, y - 4, 8, 10);
+      ctx.fillStyle = '#4ade80'; px(ctx, x - 2, y - 2, 4, 2);
+      ctx.fillStyle = look.w[1]; px(ctx, x + 2, y, 4, 2);
+      if (rng.next() < 0.4) { ctx.fillStyle = '#fbcfe8'; px(ctx, x - 2, y - 4, 4, 4); ctx.fillStyle = '#fff'; px(ctx, x - 2, y - 4); }
+    }
+  }
+  // reeds on the rim
+  for (let i = 0; i < 7; i++) {
+    const a = rng.next() * Math.PI * 2;
+    const x = p.x + Math.cos(a) * (p.rx + 4), y = p.y + Math.sin(a) * (p.ry + 4);
+    if (biome === Biome.TROPICAL) {
+      ctx.fillStyle = '#fdf6e3'; px(ctx, x, y); // tiny sand sparkle instead
+      continue;
+    }
+    for (let j = 0; j < 3; j++) {
+      const rx = x + (j - 1) * 3, h = 8 + Math.floor(rng.next() * 4) * 2;
+      ctx.fillStyle = '#3f6212'; px(ctx, rx, y - h, 2, h);
+      if (j === 1 && rng.next() < 0.6) { ctx.fillStyle = '#78350f'; px(ctx, rx - 1, y - h - 4, 4, 6); }
     }
   }
 };
@@ -784,6 +840,19 @@ const flowerHead = (f: Flower) => {
   c.height = HEAD_H;
   drawFlowerLive(c.getContext('2d')!, { ...f, x: HEAD_OX, y: HEAD_OY }, 0, 0.5, true);
   return (headCache[f.type] = c);
+};
+
+// Pixel flower head as a data URL, for the crafting cards.
+const flowerIcons: Partial<Record<FlowerType, string>> = {};
+export const flowerIcon = (f: Flower) => {
+  if (flowerIcons[f.type]) return flowerIcons[f.type]!;
+  const c = document.createElement('canvas');
+  c.width = HEAD_W; c.height = HEAD_H + 4;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#166534';
+  g.fillRect(HEAD_OX - 1, HEAD_OY - 10, 2, 14);
+  drawFlowerLive(g, { ...f, x: HEAD_OX, y: HEAD_OY }, 0, 0.5, true);
+  return (flowerIcons[f.type] = c.toDataURL());
 };
 
 export const drawFlower = (ctx: CanvasRenderingContext2D, f: Flower, now: number, time: number) => {
@@ -1341,7 +1410,7 @@ const drawFlowerLive = (ctx: CanvasRenderingContext2D, f: Flower, now: number, t
 // --- Pixel sprites (trinkets, kisses, Elio): string maps rendered once to small canvases ---
 type Pix = { rows: string[]; pal: Record<string, string> };
 
-const SPRITES: Record<string, Pix> = {
+export const SPRITES: Record<string, Pix> = {
   ribbon: { pal: { o: '#831843', P: '#f472b6', p: '#fbcfe8', k: '#be185d' }, rows: [
     'oo.....oo', 'oPPo.oPPo', 'oPpPoPpPo', 'oPPPkPPPo', 'oPpPoPpPo', 'oPPo.oPPo', 'oo.oPo.oo', '..oP.Po..', '..oo.oo..'] },
   button: { pal: { o: '#475569', B: '#94a3b8', L: '#e2e8f0', h: '#334155' }, rows: [
@@ -1368,35 +1437,88 @@ const SPRITES: Record<string, Pix> = {
     '.ooooo.', 'oWWrWWo', 'oWWrWWo', 'oWWrWWo', 'oWWWWWo', 'oWWrWWo', '.oooooo', '....oo.', '.....o.'] },
   kiss: { pal: { o: '#9d174d', H: '#f472b6', w: '#ffffff' }, rows: [
     '.oo...oo.', 'oHHo.oHHo', 'oHwHoHHHo', 'oHHHHHHHo', '.oHHHHHo.', '..oHHHo..', '...oHo...', '....o....'] },
+  // v4 shells
+  pink_shell: { pal: { o: '#9d174d', P: '#f9a8d4', p: '#fdf2f8', d: '#ec4899' }, rows: [
+    '....oo....', '...oPPo...', '..oPpdPo..', '.oPpPdPPo.', 'oPpPPdPPPo', 'oPPPdPPPo.', '.oPdPPPo..', '..oPPPo...', '...ooo....'] },
+  scallop: { pal: { o: '#9a3412', S: '#fdba74', s: '#fb923c', w: '#ffedd5' }, rows: [
+    '...ooooo...', '..oSsSsSo..', '.oSwSsSsSo.', 'oSwSsSsSsSo', 'oSsSsSsSsSo', '.oSsSsSsSo.', '..ooSSSoo..', '...oSSSo...', '....ooo....'] },
+  spiral_shell: { pal: { o: '#6b5a3a', S: '#e7d3b0', s: '#b9a27a', w: '#fbf5ea' }, rows: [
+    '...oooo...', '..oSwSSo..', '.oSsooSSo.', 'oSsoSSosSo', 'oSoSsSoSSo', 'oSsooosSo.', '.oSSssSSo.', '..ooSSSSoo', '....ooooo.'] },
+  pearl: { pal: { o: '#64748b', W: '#f8fafc', w: '#e2e8f0', i: '#fbcfe8', h: '#ffffff', S: '#cbd5e1', s: '#94a3b8', O: '#475569' }, rows: [
+    '...ooo...', '..ohWio..', '.oWWWWio.', '.oWWWiwo.', '..owwwo..', 'OO.ooo.OO', 'OSSsssSSO', '.OSSSSSO.', '..OOOOO..'] },
+  black_pearl: { pal: { o: '#0f172a', W: '#334155', w: '#1e293b', i: '#a78bfa', h: '#e2e8f0', S: '#cbd5e1', s: '#94a3b8', O: '#475569' }, rows: [
+    '...ooo...', '..ohWio..', '.oWWWWio.', '.oWWWiwo.', '..owwwo..', 'OO.ooo.OO', 'OSSsssSSO', '.OSSSSSO.', '..OOOOO..'] },
+  // v4 trinkets
+  clover: { pal: { o: '#14532d', G: '#4ade80', g: '#16a34a', w: '#bbf7d0' }, rows: [
+    '.oo...oo.', 'oGwo.oGGo', 'oGGGoGgGo', '.oGgGgGo.', '..ooGoo..', '.oGgGgGo.', 'oGgGoGGGo', 'oGGo.oGGo', '.oo.o.oo.', '....o....'] },
+  crystal: { pal: { o: '#0e7490', C: '#a5f3fc', c: '#67e8f9', W: '#ffffff' }, rows: [
+    '..ooooo..', '.oCWcCCo.', 'oCWCcCcCo', 'oooooooo.', '.oCcCCco.', '..oCcCo..', '...oCo...', '....o....'] },
+  amber: { pal: { o: '#78350f', A: '#f59e0b', a: '#b45309', w: '#fef3c7', b: '#451a03' }, rows: [
+    '...o...', '..oAo..', '.oAAAo.', 'oAwAAAo', 'oAwAbAo', 'oAAAAao', 'oAAAaao', '.oaaao.', '..ooo..'] },
+  moon_charm: { pal: { o: '#5b21b6', M: '#c4b5fd', m: '#8b5cf6', w: '#ffffff' }, rows: [
+    '..oooo....', '.oMMMo..w.', 'oMMmo....w', 'oMmo....w.', 'oMmo......', 'oMMmo...o.', '.oMMmoooMo', '..oMMMMMo.', '...ooooo..'] },
+  ladybug: { pal: { o: '#450a0a', R: '#ef4444', r: '#fca5a5', K: '#1f2937' }, rows: [
+    '...oo...', '..oKKo..', '.oRoKRo.', 'oRrRoKRo', 'oRKRoRKo', 'oRRRoRRo', 'oRKRoKRo', '.oRRoRo.', '..oooo..'] },
+  bell: { pal: { o: '#a16207', Y: '#facc15', w: '#fef9c3', y: '#ca8a04', r: '#e11d48' }, rows: [
+    '..rr.rr..', '...rrr...', '...oYo...', '..oYYYo..', '.oYwYYyo.', '.oYwYYyo.', 'oYYYYYyyo', 'ooooooooo', '...oYo...', '....o....'] },
 };
 
-// Elio: brown hair, round glasses, green sweater. Built from mirrored half-rows; frame 0 looks left, 1 right.
-const ELIO_PAL = { o: '#2a1a10', h: '#6b3f1d', H: '#9a6233', d: '#4a2a12', s: '#f5c9a0', S: '#e3ad84', r: '#f4a5a5', g: '#2b2b2b', l: '#dbeafe', L: '#ffffff', e: '#1f2937',
-  m: '#a14848', w: '#f8fafc', c: '#2f7d5b', C: '#23614a', k: '#45a879', p: '#3b4a6b', P: '#2c3752', b: '#3f2a1d', B: '#6b4a33' };
-const elioRows = (look: number) => {
-  const mir = (l: string) => l + [...l].reverse().join('');
-  const lens = (row: number) => (row === 0 || row === 4 ? 'sggggs' : row === 1 ? 'gLlllg' : look ? 'gllelg' : 'glellg');
-  const r = [
-    '..........oo', '........oohH', '......oohhHH', '.....ohhhhhH', '....ohhhhhhh', '...ohhhhhhhh', '...ohhhhhhhh', '', '',
-    '...ohsssssss', '', '', '', '', '', '...osrrsssss', '....oSssssms', '.....oSsssSm',
-    '......oSssss', '.......ooSSS', '.........oSS', '.....oocccww', '....ockccccw', '...ockcccccc', '...ockcccccc', '...occcccccc',
-    '...osCcccccc', '...ossCccccc', '....ooCCCCCC', '.....opppppp', '.....opppppP', '.....oppppPo', '.....opppPo.', '....obbBbbo.', '....obbbbbo.', '....oooooo..',
-  ].map(mir);
-  for (let i = 0; i < 5; i++) r[10 + i] = '...o' + lens(i) + (i === 0 ? 'sggs' : 'ssss') + lens(i) + 'o...';
-  r[7] = '...ohhhhhhhhhhsssshho...';
-  r[8] = '...ohhsshhhhsssssshho...';
-  const set = (y: number, x: number, ch: string) => (r[y] = r[y].slice(0, x) + ch + r[y].slice(x + 1));
-  set(5, 15, 'd'); set(6, 14, 'd'); set(6, 7, 'd'); set(3, 13, 'H'); set(2, 14, 'H');
-  return r;
-};
+// Elio (docs/elio-design.md): messy near-black hair with a heavy fringe and faded sides, thin silver-gold hexagonal
+// glasses, thin moustache and a smirk, tiny ear stud, black tee with a small green chest mark, black+blue backpack straps.
+// Frame 0 looks left, 1 right.
+const ELIO_PAL = { o: '#140d0a', h: '#2a1d17', H: '#4a3427', f: '#6b5446', s: '#e8b896', S: '#c98f6e', g: '#b3a276', l: '#f3d3b8', L: '#ffffff', W: '#fbfaf6',
+  e: '#1f1a17', m: '#2a1d17', M: '#9a5a4a', E: '#e5e7eb', c: '#1c1c1f', G: '#4ade80', b: '#0d0d10', B: '#2563eb', u: '#9ca3af',
+  p: '#2b2f3a', P: '#1f222b', n: '#2b2b2b', w: '#e5e5e5' };
+const ELIO_ROWS = [
+    '........o..oo...o.......',
+    '.......oho.oHho.oho.....',
+    '.....o.ohhoohHhoohhoo...',
+    '....ohoohhhhhHhhhhhhho..',
+    '...ohhhhhHhhhhhHhhhhhho.',
+    '..ohhhHhhhhhhhhhhhHhhhho',
+    '..ohhhhhhhhhHhhhhhhhhho.',
+    '...ohhHhhhhhhhhhhhhhhho.',
+    '...ohhhhhhhhhhhhhhhhho..',
+    '....ofhhhhhhhhhhhhfo....',
+    '....ofhshhhshhhhshfo....',
+    '....ofsgggssssgggsfo....',
+    '...osSgLllggggLllgSso...',
+    '...osS{P}Sso...',
+    '...osSsgggssssgggsSso...',
+    '...osssssssSSssssssEo...',
+    '....oSssssmmmmsMssSo....',
+    '....oSSsssssMMMssSSo....',
+    '.....oSSssssssssSSo.....',
+    '........oSSSSSSo........',
+    '.......occSssSScco......',
+    '....ocbBcccSScccBbco....',
+    '...occbBccccccccBbcco...',
+    '..occcbBccccccGcBbccco..',
+    '..occobBcccccGGcBbocco..',
+    '..ocsobBccccccccBbosco..',
+    '..ossoubccccccccbuosso..',
+    '..osso.bcccccccccb.osso.',
+    '..oSSoocccccccccccooSSo.',
+    '...oo.oppppppppppppo.oo.',
+    '......opppppPPppppppo...',
+    '......oppppPo.oPppppo...',
+    '......opppPo...oPpppo...',
+    '......oppppo...opppo....',
+    '.....onnnnno...onnnnno..',
+    '.....owwwwwo...owwwwwo..',
+];
+const elioRows = (look: number) => ELIO_ROWS.map(r => r.replace('{P}', look ? 'gWleg' + 'ss' + 'gWleg' : 'gelWg' + 'ss' + 'gelWg'));
 SPRITES.elio0 = { pal: ELIO_PAL, rows: elioRows(0) };
 SPRITES.elio1 = { pal: ELIO_PAL, rows: elioRows(1) };
 
 const pixCache: Record<string, HTMLCanvasElement> = {};
-const sprite = (key: string, scale: number, recolor?: Record<string, string>) => {
-  const ck = `${key}${scale}${recolor ? JSON.stringify(recolor) : ''}`;
+// Callers on the hot path keep their own reference to the returned canvas (the cache key is a string).
+export const sprite = (key: string, scale: number, recolor?: Record<string, string>, flip = false) => {
+  const ck = `${key}${scale}${recolor ? JSON.stringify(recolor) : ''}${flip ? 'f' : ''}`;
   if (pixCache[ck]) return pixCache[ck];
-  const { rows, pal } = SPRITES[key];
+  const { pal } = SPRITES[key];
+  const w = Math.max(...SPRITES[key].rows.map(r => r.length));
+  const rows = flip ? SPRITES[key].rows.map(r => [...r.padEnd(w, '.')].reverse().join('')) : SPRITES[key].rows;
   const p = { ...pal, ...recolor };
   const c = document.createElement('canvas');
   c.width = Math.max(...rows.map(r => r.length)) * scale;
@@ -1439,12 +1561,27 @@ const getHalo = () => {
   return halo;
 };
 
-// near: Werka is close, so the item hops a little and its halo brightens.
+// Pearls shimmer through three highlight tints.
+const IRIDESCENT: Record<string, Record<string, string>[]> = {
+  pearl: [{ i: '#fbcfe8' }, { i: '#a5f3fc', w: '#f1f5f9' }, { i: '#ddd6fe' }],
+  black_pearl: [{ i: '#a78bfa' }, { i: '#5eead4', w: '#334155' }, { i: '#f0abfc' }],
+};
+const irid: Record<string, HTMLCanvasElement[]> = {};
+const itemSprite = (kind: string, now: number) => {
+  const v = IRIDESCENT[kind];
+  if (!v) return sprite(kind, 2);
+  const arr = irid[kind] ?? (irid[kind] = v.map(r => sprite(kind, 2, r)));
+  return arr[Math.floor(now / 260) % arr.length];
+};
+
+// near: Werka is close, so the item hops a little and its halo brightens. Rare finds glint more often and brighter.
 export const drawItem = (ctx: CanvasRenderingContext2D, kind: string, x: number, y: number, now: number, near = false) => {
   const phase = x * 0.37 + y * 0.11;
   const kiss = kind === 'kiss' || kind === 'golden_kiss';
+  const rar = kiss ? 'common' : rarityOf(kind);
+  const special = rar === 'rare' || rar === 'very_rare';
   const hop = near ? Math.round(Math.abs(Math.sin(now / 160)) * 4) : 0;
-  ctx.globalAlpha = (near ? 0.55 : 0.28) + Math.sin(now / 500 + phase) * 0.1;
+  ctx.globalAlpha = (near ? 0.55 : special ? 0.45 : 0.28) + Math.sin(now / 500 + phase) * 0.1;
   ctx.drawImage(getHalo(), Math.round(x - 24), Math.round(y - (kiss ? 46 : 34)));
   ctx.globalAlpha = 1;
   ctx.fillStyle = 'rgba(0,0,0,0.2)';
@@ -1457,14 +1594,21 @@ export const drawItem = (ctx: CanvasRenderingContext2D, kind: string, x: number,
     ctx.drawImage(img, Math.round(x - img.width / 2), Math.round(y - 22 - img.height / 2 + bob - hop));
     return;
   }
-  const img = sprite(kind, 2);
+  const img = itemSprite(kind, now);
   const top = Math.round(y - img.height - 1 - hop);
   ctx.drawImage(img, Math.round(x - img.width / 2), top);
-  // glint every ~1.8s (offset per item so they don't flash together), plus a smaller twinkle half a beat later
-  const t = ((now / 1800 + phase) % 1) * 4;
-  glint(ctx, Math.round(x + img.width / 2 - 2), top + 1, t < 1 ? Math.sin(t * Math.PI) : 0);
-  glint(ctx, Math.round(x - img.width / 2 + 1), Math.round(top + img.height / 2), t > 2 && t < 2.6 ? Math.sin((t - 2) / 0.6 * Math.PI) * 0.5 : 0);
+  // glint every ~1.8s (rare: ~1s, bigger), offset per item so they don't flash together, plus a smaller twinkle half a beat later
+  const t = ((now / (special ? 1000 : 1800) + phase) % 1) * 4;
+  const big = special ? 1.6 : 1;
+  glint(ctx, Math.round(x + img.width / 2 - 2), top + 1, t < 1 ? Math.sin(t * Math.PI) * big : 0);
+  glint(ctx, Math.round(x - img.width / 2 + 1), Math.round(top + img.height / 2), t > 2 && t < 2.6 ? Math.sin((t - 2) / 0.6 * Math.PI) * 0.5 * big : 0);
+  if (rar === 'very_rare') glint(ctx, Math.round(x + 1), top - 6, t > 1.2 && t < 1.8 ? Math.sin((t - 1.2) / 0.6 * Math.PI) : 0);
 };
+
+// Pixel icon for HUD / crafting buttons (same art as in the world).
+const icons: Record<string, string> = {};
+export const itemIcon = (kind: string) =>
+  icons[kind] ?? (icons[kind] = SPRITES[kind === 'golden_kiss' ? 'kiss' : kind] ? sprite(kind === 'golden_kiss' ? 'kiss' : kind, 4, kind === 'golden_kiss' ? GOLD : undefined).toDataURL() : '');
 
 // Where Elio crouches behind his cover: clipped at the cover's base, sorted just behind it.
 export const elioHide = (cover: Obstacle, ex: number) => {

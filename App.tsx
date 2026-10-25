@@ -3,7 +3,7 @@ import { GameEngine } from './components/GameEngine';
 import { CraftingTable } from './components/CraftingTable';
 import { Gallery } from './components/Gallery';
 import { HouseInterior } from './components/HouseInterior';
-import { GameState, Flower, Bouquet, FlowerType } from './types';
+import { GameState, Flower, Bouquet, FlowerType, BouquetLayout } from './types';
 import { bouquetSvgUrl, generateBouquetImage } from './utils/bouquetArt';
 
 const SAVE_KEY = 'werka-bouquet-save-v1';
@@ -92,7 +92,7 @@ const StartMenu: React.FC<{
         ) : (
           bouquets.slice(0, 5).map(b => (
             <div key={b.id} className="flex-shrink-0 w-14 h-14 sm:w-20 sm:h-20 bg-amber-100 p-1 rounded border border-amber-800/30 shadow-md hover:scale-110 transition-transform duration-200" title={b.date}>
-              <img src={b.imageUrl ?? bouquetSvgUrl(b.flowers, b.extras)} alt="Bouquet" style={{ imageRendering: 'pixelated' }} className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all" />
+              <img src={b.layout || !b.imageUrl ? bouquetSvgUrl(b.flowers, b.extras, b.layout) : b.imageUrl} alt="Bouquet" style={{ imageRendering: 'pixelated' }} className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all" />
             </div>
           ))
         )}
@@ -195,13 +195,14 @@ const App: React.FC = () => {
     setGameState(GameState.CRAFTING);
   };
 
-  const handleCraftBouquet = (selectedTypes: FlowerType[], extras: string[]) => {
+  const handleCraftBouquet = (selectedTypes: FlowerType[], extras: string[], layout?: BouquetLayout) => {
     const newBouquet: Bouquet = {
       id: Date.now().toString(),
       date: currentDate,
       flowers: selectedTypes,
       description: `A lovely arrangement of ${selectedTypes.join(', ')}.`,
       extras,
+      layout,
     };
     setBouquets(prev => [newBouquet, ...prev]);
     const left = [...pocket];

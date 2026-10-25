@@ -1,7 +1,9 @@
 // Saved progress. Keys are prefixed werka3d_ so the 2D game's save is never touched.
 export type Item = { id: string; type: string; color: string };
+import type { Layout } from './world/bouquet-layout.ts';
 // extras: pocket items tied on (trinket ids, 'kiss', 'golden_kiss'); missing on old bouquets.
-export type Bouquet = { id: string; date: string; flowers: string[]; colors: string[]; extras?: string[] };
+// layout: hand-placed positions (spec v4 §3); missing on old bouquets, which use the auto layout.
+export type Bouquet = { id: string; date: string; flowers: string[]; colors: string[]; extras?: string[]; layout?: Layout };
 
 const K = {
   inventory: 'werka3d_inventory',

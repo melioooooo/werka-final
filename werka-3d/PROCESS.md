@@ -101,3 +101,29 @@ Spec commune 2D/3D : `docs/v3-spec.md`.
 - Low sans étalonnage couleur ;
 - désert, prairie et toundra de nuit non capturés ;
 - FPS sur vrai appareil non mesurés.
+
+## 10. v4 (branche `v4`)
+Spec commune 2D/3D : `docs/v4-spec.md`.
+- **Coquillages et trinkets** (`world/data.ts`) : 6 coquillages (dont perle et perle noire) et 6 nouveaux objets, chacun avec une rareté (commun 1, peu commun 0.5, rare 0.2, très rare 0.07). 9 à 13 trinkets par jour, dont 2 à 4 posés sur les rives (rivière ou mare). Les rares brillent plus souvent et ont leur toast. Modèles dans `render/pickups.ts`, étagère de la maison en 6 x 3.
+- **Poche** : 16 places. Jusqu'à 6 keepsakes par bouquet.
+- **Animaux** (`world/critters.ts` pour le placement, flux RNG `${seed}-critters` ; `render/critters.ts` pour le rendu) : oiseaux en volée, grenouilles, poissons, papillons, au plus 60. Ils réagissent à moins de 6 unités : la volée s'envole et se pose plus loin, la grenouille plonge (anneau d'eau, plop) puis revient, le poisson file, le papillon tourne autour de Werka. Les lucioles (particules existantes) dérivent vers elle. Une `InstancedMesh` par pièce (environ 10 draw calls), animés seulement à moins de 70 unités.
+- **Bouquet v2** (`render/bouquet.ts`, `render/studio.ts`, maths dans `world/bouquet-layout.ts`) :
+  - têtes de fleurs en LOD détaillé (`flowerHead` dans `flowers.ts` : pétales en grille 5 x 4 creusés, perles et cœurs plus fins, toujours en facettes) ; le monde garde le LOD léger ;
+  - têtes posées sur un dôme et relaxées pour ne jamais se toucher ni descendre dans le papier ; tiges en spirale qui se croisent sous le ruban ; papier plissé en deux feuilles, collerette de feuilles, feuillage et gypsophile placés seulement là où il y a de la place ;
+  - keepsakes sur le cône de papier, poussés entre eux et hors du nœud ;
+  - écran « Arrange » : glisser pour tourner, molette ou pincement pour zoomer, appui sur une fleur ou un keepsake pour la déplacer sur sa surface (les voisins font de la place), petit ressort quand on la touche, boutons tourner / plus grand / plus petit, « Shuffle » ;
+  - `layout` sauvegardé avec le bouquet (coordonnées normalisées -1..1). Les anciens bouquets sans `layout` prennent la disposition auto.
+  - La galerie utilise le même modèle, avec orbite et zoom, et tourne seule après quelques secondes.
+- **Elio** : nouveau look d'après `docs/elio-design.md` (cheveux presque noirs en mèches, frange, lunettes hexagonales dorées fines, moustache, sourire en coin, clou d'oreille, t-shirt noir, sac à dos).
+- **Tests** : `npm run check` vérifie 200 dates (9 à 13 trinkets, au moins 2 coquillages sur la rive, chaque type apparaît, animaux déterministes, plafonnés et à leur place) et 400 dispositions de bouquet (aucune tête qui se chevauche ni qui plonge dans le papier, aucun keepsake qui se chevauche).
+- **Dev** : `__werka.arrange(fleurs, keepsakes)`, `__werka.critters.debug()`, `__werka.studio.screenOf(...)`, `__werka.closeup([...])`.
+- **v4, tour 2** :
+  - bouquet plus plein : chaque tête est une capsule ajustée à sa vraie forme (épis fins et longs, marguerites larges et plates) au lieu d'une sphère large ;
+  - les épis se dressent, le dôme démarre juste au-dessus du papier (plus évasé) et les têtes sont demandées un peu trop grandes, puis réduites juste assez pour tenir : le dôme est donc toujours serré ;
+  - un lit de feuillage, abaissé sous chaque tête, remplit l'ouverture, avec des brins fleuris dans les trous ;
+  - le ressort fait tourner la tête sur son axe, donc sa capsule ne bouge pas et les têtes ne peuvent jamais se toucher ;
+  - poser une fleur sur sa voisine les échange ; une disposition sauvegardée revient à l'identique (on retrouve la taille au lieu de relancer la relaxation) ;
+  - studio : fond dégradé chaud, petit guéridon rond avec nappe festonnée et napperon, lumière principale chaude, contre-jour froid et lumière d'appoint ;
+  - le toucher est testé via CDP `Input.dispatchTouchEvent` (glisser à un doigt une fleur ou un keepsake, pincement, orbite) ;
+  - Elio : mèches douces en volume, petits yeux à iris sombres qui regardent de côté, sourire en coin ;
+  - animaux plus grands, contour sur les papillons, ombres au sol pour les oiseaux et les papillons, l'envol monte vite puis plane.

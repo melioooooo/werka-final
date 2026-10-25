@@ -618,6 +618,9 @@ function particles() {
                   sin(uTime * (0.5 + seed.x) + seed.w * 30.0) * 0.6,
                   cos(uTime * (0.25 + seed.w * 0.3) + seed.x * 20.0) * 2.0);
         p.xz = uPlayer.xz + mod(p.xz - uPlayer.xz + 22.0, 44.0) - 22.0;
+        // Fireflies drift a little toward Werka when she is close.
+        vec2 dw = p.xz - uPlayer.xz;
+        p.xz -= dw * fly * 0.4 * (1.0 - smoothstep(2.5, 9.0, length(dw)));
         p.y += uPlayer.y;
         vec4 mv = viewMatrix * vec4(p, 1.0);
         gl_Position = projectionMatrix * mv;

@@ -1,5 +1,5 @@
 import { Flower, FlowerType, Biome, Obstacle, WorldItem, Point } from '../types';
-import { CANVAS_WIDTH, CANVAS_HEIGHT, FLOWER_COLORS, HOUSE_RECT, HOUSE_SCREEN, TRINKETS } from '../constants';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, FLOWER_COLORS, HOUSE_RECT, HOUSE_SCREEN, TRINKETS, RARITY_WEIGHT, rarityOf } from '../constants';
 
 // Simple seeded random generator (LCG)
 export class SeededRandom {
@@ -29,11 +29,29 @@ export class SeededRandom {
 }
 
 export const BRIDGE_WIDTH = 80;
+// Werka's drawn feet sit ~15px below her position, so water checks look at y + FEET.
+export const FEET = 14;
+// River band (signed distance from the river centre line): positive = how far inside the no-walk band.
+export const riverDepth = (d: number) => Math.min(d + FEET + 40, 35 - d);
+export const onBridge = (x: number, bx: number) => Math.abs(x - bx) < BRIDGE_WIDTH / 2 - 10;
 export const SPAWN = { x: CANVAS_WIDTH / 2, y: 300 };
 export const isHouseScreen = (sx: number, sy: number) => sx === HOUSE_SCREEN.x && sy === HOUSE_SCREEN.y;
 
+// A pond: water ellipse (rx, ry) with a sandy/muddy rim drawn a bit wider.
+export interface Pond { x: number; y: number; rx: number; ry: number }
+// Normalised ellipse distance, 1 = on the (padded) edge.
+export const pondNorm = (p: Pond, x: number, y: number, pad = 0) => {
+  const dx = (x - p.x) / (p.rx + pad), dy = (y - p.y) / (p.ry + pad);
+  return Math.sqrt(dx * dx + dy * dy);
+};
+
+// Ambient animals. type: see CRITTER in utils/critters.ts. pond: home water (null = river or none).
+export interface CritterSpawn { type: number; x: number; y: number; flock: number; pond: Pond | null; v: number }
+
 export interface World {
   map: Biome[][];
+  ponds: Pond[][][]; // [sy][sx]
+  critters: CritterSpawn[][][]; // [sy][sx]
   flowers: Flower[];
   obstacles: Obstacle[][][]; // [sy][sx]
   items: WorldItem[];
@@ -117,8 +135,111 @@ export const makeWorld = (dateSeed: string): World => {
   }
 
   const obstacles = map.map((row, sy) => row.map((biome, sx) => genObstacles(dateSeed, sx, sy, biome, riverY)));
-  const { items, elio } = placeItems(dateSeed, map, obstacles, riverY, bridgeX);
-  return { map, flowers, obstacles, items, elio, riverY, bridgeX };
+  const ponds = genPonds(dateSeed, map, obstacles, flowers);
+  const { items, elio } = placeItems(dateSeed, map, obstacles, ponds, riverY, bridgeX);
+  const critters = genCritters(dateSeed, map, obstacles, ponds, riverY, bridgeX);
+  return { map, ponds, critters, flowers, obstacles, items, elio, riverY, bridgeX };
+};
+
+// Ponds get their own stream and only go where nothing already stands, so trees, rocks and flowers never move.
+const POND_BIOMES: Partial<Record<Biome, number>> = { [Biome.SWAMP]: 2, [Biome.TROPICAL]: 1, [Biome.MEADOW]: 0.5, [Biome.GRASS]: 0.5, [Biome.FOREST]: 0.5, [Biome.ENCHANTED]: 0.5 };
+const genPonds = (dateSeed: string, map: Biome[][], obstacles: Obstacle[][][], flowers: Flower[]): Pond[][][] => {
+  const rng = new SeededRandom(`${dateSeed}-ponds`);
+  return map.map((row, sy) => row.map((biome, sx) => {
+    const out: Pond[] = [];
+    const want = POND_BIOMES[biome] ?? 0;
+    const roll = rng.next();
+    const n = isHouseScreen(sx, sy) ? 0 : want >= 1 ? want : roll < want ? 1 : 0;
+    const here = flowers.filter(f => f.screenX === sx && f.screenY === sy);
+    for (let k = 0; k < n; k++) {
+      for (let tries = 0; tries < 60; tries++) {
+        const rx = rng.range(70, 112), ry = rx * rng.range(0.5, 0.64);
+        const p = { x: rng.range(rx + 60, CANVAS_WIDTH - rx - 60), y: rng.range(ry + 70, CANVAS_HEIGHT - ry - 70), rx, ry };
+        if (p.x < 300 + rx && p.y < 300 + ry) continue; // keep the desktop HUD corner dry
+        if (obstacles[sy][sx].some(o => pondNorm(p, o.x + 20, o.y + 24, 40) < 1)) continue;
+        if (here.some(f => pondNorm(p, f.x, f.y, 14) < 1)) continue;
+        if (out.some(q => Math.hypot(q.x - p.x, q.y - p.y) < q.rx + p.rx + 70)) continue;
+        out.push(p);
+        break;
+      }
+    }
+    return out;
+  }));
+};
+
+// Critters: deterministic per date from `${seed}-critters`; at most CRITTER_CAP per screen (only one screen runs at a time).
+export const CRITTER_CAP = 40;
+const genCritters = (dateSeed: string, map: Biome[][], obstacles: Obstacle[][][], ponds: Pond[][][], riverY: (gx: number) => number, bridgeX: (sx: number, sy: number) => number) => {
+  const rng = new SeededRandom(`${dateSeed}-critters`);
+  return map.map((row, sy) => row.map((biome, sx) => {
+    const out: CritterSpawn[] = [];
+    const ps = ponds[sy][sx];
+    const river = biome === Biome.RIVER;
+    const gx = (x: number) => sx * CANVAS_WIDTH + x;
+    const dry = (x: number, y: number) =>
+      !obstacles[sy][sx].some(o => x > o.x - 14 && x < o.x + o.width + 14 && y > o.y - 14 && y < o.y + o.height + 14) &&
+      !ps.some(p => pondNorm(p, x, y, 16) < 1) && !(river && Math.abs(y - riverY(gx(x))) < 52);
+    const open = (margin: number) => {
+      for (let t = 0; t < 30; t++) {
+        const x = rng.range(margin, CANVAS_WIDTH - margin), y = rng.range(margin + 30, CANVAS_HEIGHT - margin);
+        if (dry(x, y)) return { x, y };
+      }
+      return null;
+    };
+    const add = (type: number, x: number, y: number, flock = -1, pond: Pond | null = null) => {
+      if (out.length < CRITTER_CAP) out.push({ type, x, y, flock, pond, v: Math.floor(rng.next() * 3) });
+    };
+    // 0 BIRD: a flock or two hopping on open ground
+    if ([Biome.GRASS, Biome.MEADOW, Biome.FOREST, Biome.ENCHANTED].includes(biome)) {
+      const flocks = biome === Biome.MEADOW || biome === Biome.GRASS ? 2 : 1;
+      for (let f = 0; f < flocks; f++) {
+        const c = open(90);
+        const n = 3 + Math.floor(rng.next() * 4);
+        for (let i = 0; i < n && c; i++) {
+          const x = c.x + rng.range(-34, 34), y = c.y + rng.range(-20, 20);
+          if (dry(x, y)) add(0, x, y, f);
+        }
+      }
+    }
+    // 1 FROG on pond rims and river banks, 2 FISH under the surface, 6 CRAB on tropical shores
+    for (const p of ps) {
+      const frogs = biome === Biome.SWAMP ? 3 : 2;
+      for (let i = 0; i < frogs; i++) {
+        const a = rng.next() * Math.PI * 2;
+        const x = p.x + Math.cos(a) * (p.rx + 12), y = p.y + Math.sin(a) * (p.ry + 10);
+        if (biome !== Biome.TROPICAL && dry(x, y)) add(1, x, y, -1, p);
+      }
+      const fish = 2 + Math.floor(rng.next() * 2);
+      for (let i = 0; i < fish; i++) add(2, p.x, p.y, -1, p);
+      if (biome === Biome.TROPICAL) for (let i = 0; i < 2; i++) {
+        const a = rng.next() * Math.PI * 2;
+        const x = p.x + Math.cos(a) * (p.rx + 18), y = p.y + Math.sin(a) * (p.ry + 14);
+        if (dry(x, y)) add(6, x, y, -1, p);
+      }
+    }
+    if (river) {
+      const bx = bridgeX(sx, sy);
+      for (let i = 0; i < 4; i++) {
+        const x = rng.range(60, CANVAS_WIDTH - 60), side = rng.next() < 0.5 ? -1 : 1;
+        const y = riverY(gx(x)) + side * 56;
+        if (Math.abs(x - bx) > 70 && dry(x, y + side * 4)) add(1, x, y);
+      }
+      for (let i = 0; i < 5; i++) { const x = rng.range(0, CANVAS_WIDTH); add(2, x, riverY(gx(x)) + rng.range(-18, 18)); }
+    }
+    // 3 BUTTERFLY around flowers
+    const bf = ({ [Biome.MEADOW]: 5, [Biome.ENCHANTED]: 4, [Biome.TROPICAL]: 4, [Biome.GRASS]: 2 } as Partial<Record<Biome, number>>)[biome] ?? 0;
+    for (let i = 0; i < bf; i++) { const c = open(60); if (c) add(3, c.x, c.y); }
+    // 5 RABBIT in meadows and grass
+    if ((biome === Biome.MEADOW || biome === Biome.GRASS) && rng.next() < 0.7) { const c = open(80); if (c) add(5, c.x, c.y); }
+    // 7 OWL perched on a forest tree, only out at night
+    if (biome === Biome.FOREST) {
+      const trees = obstacles[sy][sx].filter(o => o.type === 'TREE' && o.y > 90 && o.x > 40 && o.x < CANVAS_WIDTH - 80);
+      if (trees.length) { const t = trees[Math.floor(rng.next() * trees.length)]; add(7, t.x + 20, t.y - 12); }
+    }
+    // 4 FIREFLY everywhere; only visible at dusk and night
+    for (let i = 0; i < 12; i++) add(4, rng.range(40, CANVAS_WIDTH - 40), rng.range(60, CANVAS_HEIGHT - 40));
+    return out;
+  }));
 };
 
 const genObstacles = (dateSeed: string, sx: number, sy: number, biome: Biome, riverY: (gx: number) => number): Obstacle[] => {
@@ -175,7 +296,7 @@ const genObstacles = (dateSeed: string, sx: number, sy: number, biome: Biome, ri
 
 // Trinkets, kisses and Elio get their own RNG stream and are only placed on cells reachable from the spawn.
 const CELL = 16;
-const placeItems = (dateSeed: string, map: Biome[][], obstacles: Obstacle[][][], riverY: (gx: number) => number, bridgeX: (sx: number, sy: number) => number) => {
+const placeItems = (dateSeed: string, map: Biome[][], obstacles: Obstacle[][][], ponds: Pond[][][], riverY: (gx: number) => number, bridgeX: (sx: number, sy: number) => number) => {
   const GW = (CANVAS_WIDTH * 3) / CELL, GH = (CANVAS_HEIGHT * 3) / CELL;
   const local = (c: number, r: number) => {
     const gx = c * CELL + CELL / 2, gy = r * CELL + CELL / 2;
@@ -185,7 +306,8 @@ const placeItems = (dateSeed: string, map: Biome[][], obstacles: Obstacle[][][],
   // Mirrors the player's collision (obstacle boxes + 8px, river unless on the bridge), a bit stricter.
   const passable = (sx: number, sy: number, x: number, y: number, gx: number) => {
     for (const o of obstacles[sy][sx]) if (x > o.x - 10 && x < o.x + o.width + 10 && y > o.y - 10 && y < o.y + o.height + 10) return false;
-    if (map[sy][sx] === Biome.RIVER && Math.abs(y - riverY(gx)) < 37 && Math.abs(x - bridgeX(sx, sy)) >= BRIDGE_WIDTH / 2 - 4) return false;
+    if (map[sy][sx] === Biome.RIVER && riverDepth(y - riverY(gx)) > -3 && Math.abs(x - bridgeX(sx, sy)) >= BRIDGE_WIDTH / 2 - 14) return false;
+    for (const p of ponds[sy][sx]) if (pondNorm(p, x, y + FEET, 6) < 1) return false;
     return true;
   };
   const reach = new Uint8Array(GW * GH);
@@ -207,24 +329,38 @@ const placeItems = (dateSeed: string, map: Biome[][], obstacles: Obstacle[][][],
   }
 
   // A good spot: reachable with some room around it, off the screen edges, on dry land, clear of the house and door.
-  const spots: { sx: number; sy: number; x: number; y: number; gx: number; gy: number; nearCover: boolean }[] = [];
+  type Spot = { sx: number; sy: number; x: number; y: number; gx: number; gy: number; nearCover: boolean };
+  const spots: Spot[] = [];
+  const shore: Spot[] = []; // dry land right next to water: where shells wash up
   for (let r = 0; r < GH; r++) {
     for (let c = 0; c < GW; c++) {
       if (!reach[r * GW + c]) continue;
       const p = local(c, r);
       if (p.x < 40 || p.x > CANVAS_WIDTH - 40 || p.y < 40 || p.y > CANVAS_HEIGHT - 40) continue;
       if (!reach[r * GW + c + 1] || !reach[r * GW + c - 1] || !reach[(r + 1) * GW + c] || !reach[(r - 1) * GW + c]) continue;
-      if (map[p.sy][p.sx] === Biome.RIVER && Math.abs(p.y - riverY(p.gx)) < 50) continue;
+      const rd = map[p.sy][p.sx] === Biome.RIVER ? Math.abs(p.y - riverY(p.gx)) : Infinity;
+      if (rd < 50) continue;
+      const pn = ponds[p.sy][p.sx].reduce((m, q) => Math.min(m, pondNorm(q, p.x, p.y, 18)), Infinity);
+      if (pn < 1) continue;
       if (p.x < 270 && p.y < 280) continue; // under the desktop HUD
       if (isHouseScreen(p.sx, p.sy) && p.x > HOUSE_RECT.x - 50 && p.x < HOUSE_RECT.x + HOUSE_RECT.width + 50 && p.y < HOUSE_RECT.y + HOUSE_RECT.height + 70) continue;
       const nearCover = obstacles[p.sy][p.sx].some(o => o.type !== 'HOUSE' && Math.hypot(o.x + 20 - p.x, o.y + 20 - p.y) < 64);
-      spots.push({ ...p, nearCover });
+      const s = { ...p, nearCover };
+      spots.push(s);
+      if (rd < 82 && Math.abs(p.x - bridgeX(p.sx, p.sy)) > 70) shore.push(s);
+      else if (pn < 1.45) shore.push(s);
     }
   }
 
   const rng = new SeededRandom(`${dateSeed}-trinkets`);
   const taken: { gx: number; gy: number }[] = [];
   const free = (s: { gx: number; gy: number }) => taken.every(t => Math.hypot(t.gx - s.gx, t.gy - s.gy) > 60);
+  // Rarity-weighted choice: common 1, uncommon 0.5, rare 0.2, very rare 0.07.
+  const weighted = (keys: string[]) => {
+    let r = rng.next() * keys.reduce((a, k) => a + RARITY_WEIGHT[rarityOf(k)], 0);
+    for (const k of keys) if ((r -= RARITY_WEIGHT[rarityOf(k)]) < 0) return k;
+    return keys[keys.length - 1];
+  };
   const pick = (pool: typeof spots) => {
     for (let tries = 0; tries < 40 && pool.length; tries++) {
       const s = pool[Math.floor(rng.next() * pool.length)];
@@ -247,14 +383,19 @@ const placeItems = (dateSeed: string, map: Biome[][], obstacles: Obstacle[][][],
   const elio = { x: e.x, y: e.y, screenX: e.sx, screenY: e.sy, cover };
 
   const items: WorldItem[] = [];
-  const ids = Object.keys(TRINKETS).filter(k => k !== 'star');
-  const nTrinkets = 6 + Math.floor(rng.next() * 4);
+  const keys = Object.keys(TRINKETS);
+  const shells = keys.filter(k => TRINKETS[k].shell);
+  const landKeys = keys.filter(k => !TRINKETS[k].shell);
+  const nTrinkets = 9 + Math.floor(rng.next() * 5); // 9-13
+  const nShore = 2 + Math.floor(rng.next() * 3); // 2-4 of them washed up on a shore
   for (let i = 0; i < nTrinkets; i++) {
-    const s = pick(spots);
+    const s = (i < nShore && pick(shore)) || pick(spots);
     if (!s) continue;
     const biome = map[s.sy][s.sx];
-    const fav = Object.keys(TRINKETS).filter(k => TRINKETS[k].biomes!.includes(biome) && (k !== 'star' || rng.next() < 0.25));
-    const kind = fav.length && rng.next() < 0.65 ? rng.choice(fav) : rng.choice(ids);
+    const onShore = shore.includes(s);
+    const pool = onShore ? shells : keys;
+    const fav = pool.filter(k => TRINKETS[k].biomes!.includes(biome));
+    const kind = fav.length && rng.next() < 0.65 ? weighted(fav) : weighted(onShore ? shells : landKeys);
     items.push({ id: `t:${i}`, kind, x: s.x, y: s.y, screenX: s.sx, screenY: s.sy, isPicked: false });
   }
   const nKisses = 3 + Math.floor(rng.next() * 3);

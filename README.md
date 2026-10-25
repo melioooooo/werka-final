@@ -11,6 +11,7 @@ npm run typecheck
 
 Controls: WASD/arrows to walk, hold Shift to run, E/Space to interact (pick up, talk, next line).
 Touch: drag anywhere on the left to walk, push the stick all the way to run, big button to act.
+Crafting: tap flowers and up to 6 pocket items to add them, drag them on the bouquet (arrow keys move the selected piece), ↺ ↻ to turn, − + to resize a trinket, Shuffle / Tidy.
 
-Code: `utils/world.ts` (seeded world: biomes, flowers, trees, trinkets, kisses, Elio), `utils/draw.ts` (static layers and sprites, cached in offscreen canvases), `utils/camera.ts` (touch layouts: zoomed crop following Werka), `components/GameEngine.tsx` (loop, input, HUD overlays).
-Saves: `werka_inventory`, `werka_pocket`, `werka_kisses_total`, `werka_elio_day`, `werka_bouquets`, and `werka-bouquet-save-v1` (picked flower ids plus `t:`/`k:` item ids for the day).
+Code: `utils/world.ts` (seeded world: biomes, flowers, trees, trinkets, kisses, Elio), `utils/draw.ts` (static layers and sprites, cached in offscreen canvases), `utils/critters.ts` (birds, frogs, fish, butterflies, fireflies, rabbits, crabs: one fixed pool per screen), `utils/camera.ts` (touch layouts: zoomed crop following Werka), `components/GameEngine.tsx` (loop, input, HUD overlays).
+Saves: `werka_inventory`, `werka_pocket`, `werka_kisses_total`, `werka_elio_day`, `werka_bouquets` (each bouquet may carry a `layout` of hand-placed positions), and `werka-bouquet-save-v1` (picked flower ids plus `t:`/`k:` item ids for the day).

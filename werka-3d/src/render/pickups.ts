@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { Pickup } from '../world/generate.ts';
 import { toon, addOutlines } from './toon.ts';
+import { TRINKETS, rarityOf } from '../world/data.ts';
 
 type Part = [THREE.BufferGeometry, string];
 const S = (r: number, w = 10, h = 7) => new THREE.SphereGeometry(r, w, h);
@@ -86,6 +87,63 @@ const MODELS: Record<string, () => Part[]> = {
     [new THREE.CapsuleGeometry(0.03, 0.26, 3, 6), '#3b2a52'],
   ],
   star: () => [[starGeo().scale(0.75, 0.75, 1), '#fde047']],
+  // v4 shells.
+  pink_shell: () => [
+    [new THREE.ConeGeometry(0.16, 0.5, 9).rotateZ(-Math.PI / 2).translate(0.08, 0, 0), '#f9a8d4'],
+    ...[0, 1, 2].map((i): Part => [new THREE.TorusGeometry(0.15 - i * 0.04, 0.03, 5, 12).rotateY(Math.PI / 2).translate(-0.05 + i * 0.12, 0, 0), '#f472b6']),
+    [S(0.17, 10, 6, ).scale(0.35, 1, 0.9).translate(-0.17, -0.01, 0.03), '#fce7f3'],
+    [new THREE.ConeGeometry(0.06, 0.12, 6).rotateZ(-Math.PI / 2).translate(0.38, 0, 0), '#fbcfe8'],
+  ],
+  scallop: () => [
+    ...Array.from({ length: 9 }, (_, i): Part => {
+      const a = (i / 8 - 0.5) * 2.5;
+      return [S(0.09, 6, 4).scale(0.7, 2.7, 0.45).translate(0, 0.22, 0).rotateZ(a), i % 2 ? '#fdba74' : '#fb923c'];
+    }),
+    [new THREE.BoxGeometry(0.24, 0.08, 0.06).translate(0, -0.02, 0), '#ea7a3a'],
+  ],
+  spiral_shell: () => [
+    ...[0, 1, 2, 3].map((i): Part => [new THREE.TorusGeometry(0.2 - i * 0.045, 0.065 - i * 0.012, 6, 14).rotateX(Math.PI / 2).translate(0, -0.08 + i * 0.09, 0), i % 2 ? '#e7d3b0' : '#c9a77c']),
+    [new THREE.ConeGeometry(0.05, 0.12, 6).translate(0, 0.27, 0), '#a8825a'],
+  ],
+  pearl: () => [[S(0.19, 16, 12).translate(0, 0.06, 0.04), '#f8fafc'], [S(0.05).translate(-0.07, 0.14, 0.18), '#ffffff'],
+    [S(0.3, 12, 6, ).scale(1, 0.32, 0.8).translate(0, -0.13, 0), '#cbd5e1'], [S(0.24, 10, 5).scale(1, 0.2, 0.7).translate(0, -0.1, 0.02), '#e2e8f0']],
+  black_pearl: () => [[S(0.19, 16, 12).translate(0, 0.06, 0.04), '#475569'], [S(0.05).translate(-0.07, 0.14, 0.18), '#cbd5e1'],
+    [S(0.3, 12, 6).scale(1, 0.32, 0.8).translate(0, -0.13, 0), '#64748b'], [S(0.24, 10, 5).scale(1, 0.2, 0.7).translate(0, -0.1, 0.02), '#94a3b8']],
+  // v4 trinkets.
+  clover: () => [
+    ...[0, 1, 2, 3].map((i): Part => [heart(0.05, 0.02).scale(0.32, 0.32, 1).translate(0, 0.14, i * 0.012).rotateZ(i * Math.PI / 2 + Math.PI / 4), i % 2 ? '#4ade80' : '#22c55e']),
+    [new THREE.CylinderGeometry(0.02, 0.025, 0.28, 5).translate(0, -0.14, 0).rotateZ(0.3), '#15803d'],
+  ],
+  crystal: () => [
+    [new THREE.OctahedronGeometry(0.15).scale(0.8, 2, 0.8).translate(0, 0.06, 0), '#a5f3fc'],
+    [new THREE.OctahedronGeometry(0.1).scale(0.8, 1.8, 0.8).rotateZ(0.6).translate(0.14, -0.05, 0.03), '#67e8f9'],
+    [new THREE.OctahedronGeometry(0.09).scale(0.8, 1.7, 0.8).rotateZ(-0.6).translate(-0.13, -0.07, 0), '#cffafe'],
+  ],
+  amber: () => [
+    [S(0.17, 12, 8).translate(0, -0.06, 0), '#f59e0b'], [new THREE.ConeGeometry(0.15, 0.28, 12).translate(0, 0.17, 0), '#fbbf24'],
+    [S(0.04).scale(1.4, 0.7, 0.7).translate(0.02, -0.04, 0.12), '#7c2d12'], [S(0.04).translate(-0.06, 0.04, 0.14), '#fff7d6'],
+  ],
+  moon_charm: () => {
+    const sh = new THREE.Shape();
+    sh.absarc(0, 0, 0.26, Math.PI * 0.3, Math.PI * 1.7, false);
+    sh.absarc(0.1, 0, 0.2, Math.PI * 1.55, Math.PI * 0.45, true);
+    return [[new THREE.ExtrudeGeometry(sh, { depth: 0.06, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.025, bevelSegments: 1, curveSegments: 10 }).translate(-0.03, 0, -0.03), '#c4b5fd'],
+      [starGeo().scale(0.22, 0.22, 0.6).translate(0.2, 0.16, 0), '#fde68a'], [new THREE.TorusGeometry(0.04, 0.012, 4, 8).translate(-0.06, 0.29, 0), '#e5e7eb']];
+  },
+  ladybug: () => [
+    [S(0.2, 12, 6, ).scale(1, 0.62, 1.15).translate(0, 0, -0.02), '#ef4444'],
+    [S(0.09).scale(1, 0.7, 0.8).translate(0, 0, 0.22), '#1f1f1f'],
+    [new THREE.BoxGeometry(0.012, 0.13, 0.46).translate(0, 0.07, -0.02), '#1f1f1f'],
+    ...[[-0.1, 0.06], [0.1, 0.06], [-0.11, -0.1], [0.11, -0.1], [0, -0.17]].map(([x, z]): Part => [S(0.035, 6, 4).scale(1, 0.4, 1).translate(x, 0.11, z), '#1f1f1f']),
+    [S(0.025, 5, 4).translate(-0.04, 0.03, 0.29), '#ffffff'], [S(0.025, 5, 4).translate(0.04, 0.03, 0.29), '#ffffff'],
+  ].map(([g, c]) => [(g as THREE.BufferGeometry).rotateX(1.1), c] as Part),
+  bell: () => [
+    [new THREE.LatheGeometry([[0, -0.16], [0.2, -0.16], [0.17, -0.12], [0.12, 0], [0.1, 0.12], [0.07, 0.19], [0, 0.2]].map(([x, y]) => new THREE.Vector2(x, y)), 12), '#facc15'],
+    [S(0.05).translate(0, -0.18, 0.03), '#a16207'],
+    [new THREE.TorusGeometry(0.05, 0.015, 4, 10).translate(0, 0.25, 0), '#ca8a04'],
+    [new THREE.TorusGeometry(0.06, 0.02, 4, 10).scale(1.3, 0.8, 0.5).translate(-0.09, 0.2, 0.05), '#e11d48'],
+    [new THREE.TorusGeometry(0.06, 0.02, 4, 10).scale(1.3, 0.8, 0.5).translate(0.09, 0.2, 0.05), '#e11d48'],
+  ],
   kiss: () => [[heart(0.12, 0.06).scale(0.6, 0.6, 1), '#f472b6']],
   golden_kiss: () => [[heart(0.14, 0.07).scale(0.72, 0.72, 1), '#f5c542'], [S(0.07).translate(-0.13, 0.12, 0.12), '#fff7cc']],
 };
@@ -111,6 +169,10 @@ export function pickupGeometry(type: string) {
 
 export const pickupMat = toon({ vertexColors: true, rim: 0.7 });
 const glowMat = toon({ vertexColors: true, rim: 1, emissive: '#5a3a00' });
+// Pearls: strong cool rim with a pink/teal lift, reads as iridescent under the toon ramp.
+const pearlMat = toon({ vertexColors: true, rim: 1.6, emissive: '#2c2338' });
+const matFor = (type: string) => (type === 'star' || type === 'moon_charm' ? glowMat : type === 'pearl' || type === 'black_pearl' ? pearlMat : pickupMat);
+export const RARE = new Set(TRINKETS.filter(t => ['rare', 'very_rare'].includes(rarityOf(t))).map(t => t.id));
 
 // Four-point star glint, drawn once to a canvas.
 const glintTex = (() => {
@@ -135,7 +197,7 @@ const HOVER = 0.95, SIZE = 1.7;
 export function buildPickups(list: Pickup[], ground: (x: number, z: number) => number) {
   const group = new THREE.Group();
   const items = list.map((p, i) => {
-    const m = new THREE.Mesh(pickupGeometry(p.type), p.type === 'star' ? glowMat : pickupMat);
+    const m = new THREE.Mesh(pickupGeometry(p.type), matFor(p.type));
     m.scale.setScalar(SIZE);
     m.castShadow = true;
     addOutlines(m, 0.035);
@@ -146,7 +208,7 @@ export function buildPickups(list: Pickup[], ground: (x: number, z: number) => n
     shadow.position.set(p.x, y + 0.05, p.z);
     m.position.set(p.x, y + HOVER, p.z);
     group.add(m, glint, shadow);
-    return { p, m, glint, shadow, y, ph: i * 1.7 };
+    return { p, m, glint, shadow, y, ph: i * 1.7, rare: RARE.has(p.type) };
   });
   const byId = new Map(items.map(it => [it.p.id, it]));
 
@@ -168,9 +230,10 @@ export function buildPickups(list: Pickup[], ground: (x: number, z: number) => n
       it.m.updateMatrixWorld();
       it.shadow.scale.setScalar(1 - bob * 0.8);
       // Glint: a quick star flash every ~3 s, offset per pickup.
-      const g = (time * 0.33 + it.ph * 0.37) % 1;
-      const k = g < 0.12 ? Math.sin((g / 0.12) * Math.PI) : 0;
-      it.glint.scale.setScalar(k * 1.5);
+      // Rare finds flash twice as often and bigger.
+      const g = (time * (it.rare ? 0.7 : 0.33) + it.ph * 0.37) % 1;
+      const k = g < 0.14 ? Math.sin((g / 0.14) * Math.PI) : 0;
+      it.glint.scale.setScalar(k * (it.rare ? 2.6 : 1.5));
       it.glint.position.set(it.p.x + 0.22, it.m.position.y + 0.25, it.p.z + 0.15);
       it.glint.material.rotation = time;
     }

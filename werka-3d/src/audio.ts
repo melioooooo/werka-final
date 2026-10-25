@@ -96,6 +96,11 @@ export const sfx = {
   trinket() { if (!ctx) return; const t = ctx.currentTime; [1568, 2093, 2637].forEach((f, i) => tone(f, t + i * 0.05, 0.5, 0.05, 'sine')); tone(3136, t + 0.18, 0.7, 0.025, 'sine'); },
   kiss() { if (!ctx) return; const t = ctx.currentTime; tone(784, t, 0.18, 0.06, 'sine', 1.5); [1175, 1568].forEach((f, i) => tone(f, t + 0.12 + i * 0.08, 0.6, 0.05, 'triangle')); },
   golden() { if (!ctx) return; const t = ctx.currentTime; [523, 659, 784, 1046, 1318, 1568, 2093].forEach((f, i) => tone(f, t + i * 0.08, 1.1, 0.06, 'triangle')); tone(2637, t + 0.6, 1.4, 0.03, 'sine'); },
+  rare() { if (!ctx) return; const t = ctx.currentTime; [1318, 1568, 1976, 2637, 3136].forEach((f, i) => tone(f, t + i * 0.07, 0.9, 0.045, 'sine')); tone(784, t, 1.2, 0.03, 'triangle'); },
+  // Critters: quiet, the caller rate-limits.
+  flap() { if (!ctx) return; const t = ctx.currentTime; for (let i = 0; i < 4; i++) tone(180 + Math.random() * 80, t + i * 0.06, 0.05, 0.012, 'triangle', 0.7); },
+  ribbit() { if (!ctx) return; const t = ctx.currentTime; tone(310, t, 0.09, 0.03, 'square', 0.75); tone(280, t + 0.13, 0.11, 0.028, 'square', 0.7); },
+  plop() { if (!ctx) return; tone(700, ctx.currentTime, 0.16, 0.04, 'sine', 0.35); },
   blip() { if (!ctx) return; tone(620 + Math.random() * 120, ctx.currentTime, 0.05, 0.02, 'triangle'); },
 };
 

@@ -54,14 +54,17 @@ export const BIOME_FLOWERS: Record<Biome, { types: string[]; density: number }> 
 export const timeLabel = (t: number) =>
   t < 0.2 || t > 0.85 ? 'NIGHT' : t < 0.3 ? 'DAWN' : t < 0.7 ? 'DAY' : 'DUSK';
 
-// Trinkets (spec v3, shared with 2D): pocket items found once per day, favouring some biomes.
-export const MAX_POCKET = 8;
-export const MAX_EXTRAS = 2; // pocket items a bouquet can carry
-export type Trinket = { id: string; name: string; emoji: string; color: string; biomes: Biome[]; rare?: boolean };
+// Trinkets (spec v3 + v4, shared with 2D): pocket items found once per day, favouring some biomes.
+export const MAX_POCKET = 16;
+export const MAX_EXTRAS = 6; // pocket items a bouquet can carry
+export type Rarity = 'common' | 'uncommon' | 'rare' | 'very_rare';
+export const RARITY_WEIGHT: Record<Rarity, number> = { common: 1, uncommon: 0.5, rare: 0.2, very_rare: 0.07 };
+export type Trinket = { id: string; name: string; emoji: string; color: string; biomes: Biome[]; rare?: boolean; rarity?: Rarity; shell?: boolean };
+export const rarityOf = (t: Trinket): Rarity => t.rarity ?? (t.rare ? 'rare' : 'common');
 export const TRINKETS: Trinket[] = [
   { id: 'ribbon', name: 'Silk Ribbon', emoji: '🎀', color: '#f472b6', biomes: ['GRASS', 'MEADOW'] },
   { id: 'button', name: 'Lost Button', emoji: '🔘', color: '#94a3b8', biomes: ['GRASS', 'RIVER'] },
-  { id: 'shell', name: 'Seashell', emoji: '🐚', color: '#fcd5ce', biomes: ['RIVER', 'TROPICAL', 'SWAMP'] },
+  { id: 'shell', name: 'Seashell', emoji: '🐚', color: '#fcd5ce', biomes: ['RIVER', 'TROPICAL', 'SWAMP'], shell: true },
   { id: 'marble', name: 'Glass Marble', emoji: '🔮', color: '#818cf8', biomes: ['DESERT', 'ENCHANTED'] },
   { id: 'feather', name: 'Blue Feather', emoji: '🪶', color: '#38bdf8', biomes: ['FOREST', 'MOUNTAIN'] },
   { id: 'key', name: 'Old Key', emoji: '🗝️', color: '#d4a017', biomes: ['FOREST', 'DESERT'] },
@@ -70,6 +73,19 @@ export const TRINKETS: Trinket[] = [
   { id: 'pebble', name: 'Heart Pebble', emoji: '🪨', color: '#a8a29e', biomes: ['MOUNTAIN', 'TUNDRA'] },
   { id: 'butterfly', name: 'Butterfly Charm', emoji: '🦋', color: '#a78bfa', biomes: ['ENCHANTED', 'TROPICAL'] },
   { id: 'star', name: 'Fallen Star', emoji: '⭐', color: '#fde047', biomes: ['ENCHANTED', 'TUNDRA'], rare: true },
+  // v4 seashell family: mostly on shores (land right next to water).
+  { id: 'pink_shell', name: 'Pink Conch', emoji: '🐚', color: '#f9a8d4', biomes: ['RIVER', 'TROPICAL'], rarity: 'uncommon', shell: true },
+  { id: 'scallop', name: 'Scallop Shell', emoji: '🐚', color: '#fdba74', biomes: ['RIVER', 'SWAMP', 'TROPICAL'], shell: true },
+  { id: 'spiral_shell', name: 'Spiral Shell', emoji: '🐚', color: '#e7d3b0', biomes: ['SWAMP', 'RIVER'], rarity: 'uncommon', shell: true },
+  { id: 'pearl', name: 'Pearl', emoji: '⚪', color: '#f8fafc', biomes: ['RIVER', 'TROPICAL'], rarity: 'rare', shell: true },
+  { id: 'black_pearl', name: 'Black Pearl', emoji: '⚫', color: '#475569', biomes: ['TROPICAL', 'SWAMP'], rarity: 'very_rare', shell: true },
+  // v4 more trinkets.
+  { id: 'clover', name: 'Four-leaf Clover', emoji: '🍀', color: '#4ade80', biomes: ['GRASS', 'MEADOW'], rarity: 'uncommon' },
+  { id: 'crystal', name: 'Ice Crystal', emoji: '💎', color: '#a5f3fc', biomes: ['TUNDRA', 'MOUNTAIN'], rarity: 'uncommon' },
+  { id: 'amber', name: 'Amber Drop', emoji: '🟠', color: '#f59e0b', biomes: ['FOREST', 'DESERT'], rarity: 'uncommon' },
+  { id: 'moon_charm', name: 'Moon Charm', emoji: '🌙', color: '#c4b5fd', biomes: ['ENCHANTED'], rarity: 'rare' },
+  { id: 'ladybug', name: 'Ladybug Pin', emoji: '🐞', color: '#ef4444', biomes: ['MEADOW', 'GRASS', 'FOREST'] },
+  { id: 'bell', name: 'Tiny Bell', emoji: '🔔', color: '#facc15', biomes: ['MOUNTAIN', 'GRASS'], rarity: 'uncommon' },
 ];
 // Every pocket item id (trinkets + kisses) -> display info.
 export const POCKET_INFO: Record<string, { name: string; emoji: string; color: string }> = {

@@ -2,8 +2,8 @@ import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../constants';
 
 // Touch layouts draw the 1024x768 screen offscreen, then blit a zoomed crop that follows Werka.
 // Nearest-neighbour scaling keeps the pixel art crisp.
-export interface Camera { x: number; y: number; vh: number; snap: boolean; last: number }
-export const newCamera = (): Camera => ({ x: 0, y: 0, vh: CANVAS_HEIGHT, snap: true, last: 0 });
+export interface Camera { x: number; y: number; vw: number; vh: number; snap: boolean; last: number }
+export const newCamera = (): Camera => ({ x: 0, y: 0, vw: CANVAS_WIDTH, vh: CANVAS_HEIGHT, snap: true, last: 0 });
 
 export const makeScene = () => {
   const c = document.createElement('canvas');
@@ -26,7 +26,7 @@ export const blitCamera = (ctx: CanvasRenderingContext2D, scene: HTMLCanvasEleme
   const r = Math.round(k);
   if (Math.abs(k - r) < 0.2 && r >= minK) k = r;
   const vw = W / k, vh = H / k;
-  cam.vh = vh;
+  cam.vw = vw; cam.vh = vh;
   const tx = clamp(fx - vw / 2, 0, CANVAS_WIDTH - vw), ty = clamp(fy - vh / 2, 0, CANVAS_HEIGHT - vh);
   const dt = Math.min(now - cam.last, 100);
   cam.last = now;

@@ -1,14 +1,16 @@
 // Game loop and state machine: menu -> intro -> outdoor <-> house -> craft -> gallery.
 import * as THREE from 'three';
 import { generateWorld, blocked, steep, walkY, SPAWN, HOUSE, HALF, EDGE } from './world/generate.ts';
-import { DAY_CYCLE_DURATION, MAX_INVENTORY, MAX_POCKET, POCKET_INFO, START_TIME, timeLabel } from './world/data.ts';
+import { FLOWER_COLORS, DAY_CYCLE_DURATION, MAX_INVENTORY, MAX_POCKET, POCKET_INFO, START_TIME, TRINKETS, rarityOf, timeLabel } from './world/data.ts';
 import { state, load, save, today, type Bouquet } from './state.ts';
 import { buildOutdoor } from './render/outdoor.ts';
 import { buildPlayer } from './render/player.ts';
 import { buildInterior, buildGallery, interiorBlocked, interiorCamera, setHouseTreasures, TABLE, EXIT } from './render/house.ts';
 import { buildPickups, heartBurst, pickupGeometry } from './render/pickups.ts';
 import { buildElio } from './render/elio.ts';
-import { buildBouquet } from './render/bouquet.ts';
+import { buildStudio } from './render/studio.ts';
+import { buildCritters } from './render/critters.ts';
+import { spawnCritters } from './world/critters.ts';
 import { flowerGeometry } from './render/flowers.ts';
 import { buildPost } from './render/post.ts';
 import { flowerIcon, pickupIcon } from './render/icons.ts';
@@ -18,7 +20,7 @@ import { initInput, readMove, consumeAction, running, input } from './input/inpu
 import { startAudio, ambience, sfx, isMuted, toggleMute } from './audio.ts';
 import * as ui from './ui/ui.ts';
 
-type Mode = 'menu' | 'intro' | 'outdoor' | 'talk' | 'house' | 'craft' | 'gallery';
+type Mode = 'menu' | 'intro' | 'outdoor' | 'talk' | 'house' | 'craft' | 'arrange' | 'gallery';
 
 load();
 const world = generateWorld(state.date);
@@ -41,15 +43,18 @@ let post = buildPost(renderer, PRESETS[quality].msaa);
 const outdoor = buildOutdoor(world);
 const interior = buildInterior();
 const galleryView = buildGallery();
+const studio = buildStudio(canvas, galleryView);
 const player = buildPlayer();
 outdoor.scene.add(player.root, player.dust);
 // Trinkets, kisses and Elio (ids 't:'/'k:' share the picked set with flowers).
 const pickups = buildPickups([...world.trinkets, ...world.kisses], (x, z) => walkY(world, x, z));
 const elio = buildElio(world.elio);
 const hearts = heartBurst(outdoor.scene);
-outdoor.scene.add(pickups.group, elio.root);
+const critters = buildCritters(world, spawnCritters(world), sfx);
+outdoor.scene.add(pickups.group, elio.root, critters.group);
 for (const id of state.picked) { outdoor.hideFlower(id); pickups.hide(id); }
 
+let mode: Mode = 'menu';
 const resize = () => {
   const w = innerWidth, h = innerHeight;
   renderer.setSize(w, h, false);
@@ -57,10 +62,10 @@ const resize = () => {
   camera.aspect = galleryView.camera.aspect = w / h;
   // Phones: a slightly longer lens so Werka and Elio stay readable on small screens.
   camera.fov = w < h ? CAM.fov * 0.9 : h < 500 ? CAM.fov * 0.72 : CAM.fov;
-  galleryView.camera.position.set(0, 1.2, w < h ? 8.8 : 5.2);
-  galleryView.camera.lookAt(0, 0.2, 0);
   camera.updateProjectionMatrix();
-  galleryView.camera.updateProjectionMatrix();
+  // Studio: keep the bouquet clear of the gallery list (left on wide screens, bottom on portrait).
+  const gal = mode === 'gallery';
+  studio.resize(w, h, gal && w >= h ? Math.min(0.2, 174 / w) : 0, gal && w < h ? 0.2 : mode === 'arrange' ? (h < 500 ? 0.04 : -0.045) : 0);
 };
 addEventListener('resize', resize);
 
@@ -80,7 +85,6 @@ const QUALITY_LABEL: Record<Quality, string> = { low: 'Low', med: 'Medium', high
 initInput(canvas, ui.stick, ui.knob, ui.actBtn);
 ui.initMute(isMuted(), toggleMute);
 
-let mode: Mode = 'menu';
 let busy = false; // true during fades so input can't double-trigger
 let dayT = START_TIME, day = 1, golden = 0;
 const pos = new THREE.Vector3(SPAWN.x, 0, SPAWN.z);
@@ -162,38 +166,61 @@ function enterHouse() {
   refreshBasket();
 }
 
-function openCraft() {
+function openCraft(initial?: { picked: number[]; extras: number[] }) {
   mode = 'craft';
   ui.setAction(null); ui.setPlaying(false);
   ui.craft(state.inventory, state.pocket, flowerIcon, pickupIcon, (picked, extras) => {
-    const items = picked.map(i => state.inventory[i]);
-    const b: Bouquet = { id: Date.now().toString(), date: state.date, flowers: items.map(i => i.type), colors: items.map(i => i.color) };
-    if (extras.length) b.extras = extras.map(i => state.pocket[i]);
-    state.bouquets.unshift(b);
-    state.inventory = state.inventory.filter((_, i) => !picked.includes(i));
-    state.pocket = state.pocket.filter((_, i) => !extras.includes(i));
-    save();
-    refreshBasket();
-    sfx.craft();
-    ui.fade(() => openGallery('house'));
-  }, () => { mode = 'house'; ui.setPlaying(true); refreshBasket(); });
+    sfx.ui();
+    ui.fade(() => openArrange(picked, extras));
+  }, () => { mode = 'house'; ui.setPlaying(true); refreshBasket(); }, initial);
+}
+
+// Arrange the chosen flowers and keepsakes in the studio, then tie and save the bouquet.
+function openArrange(picked: number[], extras: number[]) {
+  mode = 'arrange';
+  input.stick = false;
+  ui.setHud(null);
+  resize();
+  studio.setActive(true);
+  const items = picked.map(i => state.inventory[i]);
+  const ids = extras.map(i => state.pocket[i]);
+  studio.show({ flowers: items.map(i => i.type), extras: ids }, true, s => {
+    bar.select(s ? (s.kind === 'flower' ? items[s.i].type : POCKET_INFO[ids[s.i]]?.name ?? ids[s.i]) : null, s?.kind === 'extra');
+    if (s) sfx.blip();
+  });
+  const leave = () => { studio.setActive(false); studio.show(null); input.stick = true; };
+  const bar = ui.arrange({
+    onShuffle: () => { studio.model?.shuffle(); sfx.ui(); },
+    onTurn: d => studio.model?.turn(d),
+    onScale: d => studio.model?.scale(d),
+    onBack: () => { sfx.ui(); ui.fade(() => { leave(); openCraft({ picked, extras }); }); },
+    onDone: () => {
+      const layout = studio.model!.layout();
+      const b: Bouquet = { id: Date.now().toString(), date: state.date, flowers: items.map(i => i.type), colors: items.map(i => i.color), layout };
+      if (ids.length) b.extras = ids;
+      state.bouquets.unshift(b);
+      state.inventory = state.inventory.filter((_, i) => !picked.includes(i));
+      state.pocket = state.pocket.filter((_, i) => !extras.includes(i));
+      save();
+      refreshBasket();
+      sfx.craft();
+      ui.fade(() => { leave(); openGallery('house'); });
+    },
+  });
 }
 
 function openGallery(back: Mode) {
   galleryReturn = back;
   mode = 'gallery';
+  input.stick = false;
+  resize();
+  studio.setActive(true);
   ui.setHud(null); ui.setAction(null); ui.setPlaying(false);
-  ui.gallery(state.bouquets, pickupIcon, showBouquet, () =>
-    ui.fade(() => (galleryReturn === 'house' ? enterHouse() : goMenu())));
-}
-
-// Gallery bouquet built here so keepsakes show (the gallery scene itself lives in house.ts).
-let shown: THREE.Group | null = null;
-function showBouquet(b: Bouquet | null) {
-  galleryView.show(null);
-  if (shown) galleryView.scene.remove(shown);
-  shown = b ? buildBouquet(b.flowers, b.extras) : null;
-  if (shown) { shown.position.y = -0.3; galleryView.scene.add(shown); }
+  ui.gallery(state.bouquets, pickupIcon, b => studio.show(b), () =>
+    ui.fade(() => {
+      studio.setActive(false); studio.show(null); input.stick = true;
+      if (galleryReturn === 'house') enterHouse(); else goMenu();
+    }));
 }
 
 const run = (action: () => void) => {
@@ -249,6 +276,7 @@ function followCamera(dt: number, dist: number, pitch: number, at = pos) {
 
 const elioFocus = new THREE.Vector3(), tmpV = new THREE.Vector3();
 const talkShift = new THREE.Vector3(0, -1.2, 2.2);
+let devCam: number[] | null = null; // dev close-up camera [pos, target]
 let talkAgain = 0, zoom = 1; // mashing the key after a goodbye must not reopen the box at once
 // Elio: three lines and the golden kiss once a day, then a goodbye line.
 function talkToElio() {
@@ -297,6 +325,7 @@ function tickOutdoor(dt: number, time: number) {
   U.uCut.value += ((behind ? 1 : 0) - U.uCut.value) * Math.min(1, dt * 6);
   elio.update(dt, time, pos, walkY(world, elio.root.position.x, elio.root.position.z));
   pickups.update(time, pos);
+  critters.update(dt, time, pos, day);
   hearts.update(dt, camera);
 
   // Closest unpicked flower or pickup in reach; Elio wins when he is right there.
@@ -349,8 +378,10 @@ function tickOutdoor(dt: number, time: number) {
         player.hop();
         save();
         refreshBasket();
-        if (kiss) sfx.kiss(); else sfx.trinket();
-        ui.toast(kiss ? "A kiss from Elio! \u2665" : `Found a ${info.name}`);
+        const rar = kiss ? 'common' : rarityOf(TRINKETS.find(t => t.id === bestP!.type)!);
+        if (kiss) sfx.kiss(); else if (rar === 'rare' || rar === 'very_rare') { sfx.rare(); hearts.fire(tmpV.setFromMatrixPosition(pickups.pose(bestP.id)), true); }
+        else sfx.trinket();
+        ui.toast(kiss ? "A kiss from Elio! \u2665" : rar === 'very_rare' ? `A very rare ${info.name}!` : rar === 'rare' ? `A rare ${info.name}!` : `Found a ${info.name}`, rar === 'common' || rar === 'uncommon' ? 1400 : 2600);
       }
     } else if (atDoor) { sfx.door(); run(enterHouse); }
   }
@@ -363,6 +394,7 @@ function tickOutdoor(dt: number, time: number) {
   // Closer, and aimed a little below them so the speech box doesn't cover the pair.
   zoom += ((talking ? 0.62 : 1) - zoom) * Math.min(1, dt * 3);
   followCamera(dt, CAM.dist * zoom, CAM.pitch, talking ? elioFocus.copy(elio.root.position).lerp(pos, 0.5).add(talkShift) : pos);
+  if (devCam) { camera.position.set(devCam[0], devCam[1], devCam[2]); camera.lookAt(devCam[3], devCam[4], devCam[5]); }
   // Home compass once the cottage is well out of view.
   const hx = -pos.x, hz = -pos.z;
   ui.setCompass(Math.hypot(hx, hz) > 26 ? Math.atan2(hx, -hz) : null);
@@ -424,10 +456,9 @@ renderer.setAnimationLoop(now => {
     interior.update(time, day);
     ambience(day, true, dt);
     post.draw(interior.scene, camera);
-  } else if (mode === 'gallery') {
+  } else if (mode === 'gallery' || mode === 'arrange') {
     consumeAction();
-    galleryView.update(time);
-    if (shown) shown.rotation.y = time * 0.5;
+    studio.update(dt, time, mode === 'gallery');
     ambience(day, true, dt);
     post.draw(galleryView.scene, galleryView.camera);
   } else {
@@ -463,6 +494,16 @@ if (import.meta.env.DEV) {
         pos.set(p.x + 1, walkY(world, p.x + 1, p.z), p.z); camTarget.copy(pos);
       },
       action: () => { input.action = true; },
+      studio, critters,
+      studioCalls: () => { renderer.render(galleryView.scene, galleryView.camera); return renderer.info.render.calls; },
+      // Jump straight to arranging: fills the basket/pocket with the given items first.
+      arrange: (flowers: string[], extras: string[] = []) => {
+        state.inventory = flowers.map((t, i) => ({ id: `dev-${i}`, type: t, color: FLOWER_COLORS[t] ?? '#f472b6' }));
+        state.pocket = [...extras];
+        openArrange(flowers.map((_, i) => i), extras.map((_, i) => i));
+      },
+      gallery: () => openGallery('menu'),
+      elio, closeup: (v: number[] | null) => { devCam = v; },
       setDay: (t: number) => { dayT = t; },
       get quality() { return quality; },
       setQuality: (q: Quality) => applyQuality(q),

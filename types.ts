@@ -126,6 +126,13 @@ export interface Bouquet {
   imageUrl?: string; // generated pixel-art PNG; absent => SVG fallback
   description: string;
   extras?: string[]; // pocket item ids (trinket ids, 'kiss', 'golden_kiss'); absent on old saves
+  layout?: BouquetLayout; // hand-placed positions; absent => auto layout
+}
+
+// Normalised bouquet coordinates: x,y in -1..1 over the square picture, r in degrees, s a scale factor.
+export interface BouquetLayout {
+  flowers?: { x: number; y: number; r?: number }[];
+  extras?: { x: number; y: number; r?: number; s?: number }[];
 }
 
 // A trinket or kiss lying in the world. id is prefixed 't:' / 'k:' so it never clashes with flower ids.

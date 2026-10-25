@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Bouquet } from '../types';
 import { bouquetSvgUrl, bouquetJpegBlob } from '../utils/bouquetArt';
 import { POCKET_INFO } from '../constants';
+import { ItemIcon } from './InventoryHUD';
 
 interface GalleryProps {
   bouquets: Bouquet[];
@@ -9,13 +10,17 @@ interface GalleryProps {
 }
 
 export const Gallery: React.FC<GalleryProps> = ({ bouquets, onBack }) => {
+  // Hand-arranged bouquets show the arrangement first; the generated pixel picture is one tap away.
+  const [flipped, setFlipped] = useState<Set<string>>(new Set());
+  const showPixel = (b: Bouquet) => !!b.imageUrl && (!b.layout || flipped.has(b.id));
+  const flip = (id: string) => setFlipped(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   // Download function to save image as JPG with proper filename
   const downloadImage = async (bouquet: Bouquet) => {
     try {
       // Format the filename: "Werka's Bouquet - December 9, 2024.jpg"
       const filename = `Werka's Bouquet - ${bouquet.date}.jpg`;
 
-      const url = window.URL.createObjectURL(await bouquetJpegBlob(bouquet.flowers, bouquet.imageUrl, bouquet.extras));
+      const url = window.URL.createObjectURL(await bouquetJpegBlob(bouquet.flowers, showPixel(bouquet) ? bouquet.imageUrl : undefined, bouquet.extras, bouquet.layout));
 
       const link = document.createElement('a');
       link.href = url;
@@ -30,7 +35,7 @@ export const Gallery: React.FC<GalleryProps> = ({ bouquets, onBack }) => {
     } catch (error) {
       console.error('Failed to download image:', error);
       // Fallback: open in new tab so user can right-click save
-      window.open(bouquet.imageUrl ?? bouquetSvgUrl(bouquet.flowers, bouquet.extras), '_blank');
+      window.open(showPixel(bouquet) ? bouquet.imageUrl : bouquetSvgUrl(bouquet.flowers, bouquet.extras, bouquet.layout), '_blank');
     }
   };
 
@@ -47,7 +52,7 @@ export const Gallery: React.FC<GalleryProps> = ({ bouquets, onBack }) => {
       </div>
 
       <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
-        <div className="grid grid-cols-1 sm:grid-cols-2 [@media(max-height:500px)]:grid-cols-3 gap-6 [@media(max-height:500px)]:gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 [@media(max-height:500px)]:grid-cols-3 gap-6 [@media(max-height:500px)]:gap-3 pb-2">
           {bouquets.length === 0 ? (
             <div className="col-span-2 flex flex-col items-center justify-center h-64 text-slate-500">
               <p className="text-xl mb-2">No bouquets yet.</p>
@@ -57,7 +62,16 @@ export const Gallery: React.FC<GalleryProps> = ({ bouquets, onBack }) => {
             bouquets.map((b) => (
               <div key={b.id} className="bg-white p-3 rounded shadow-xl rotate-1 hover:rotate-0 transition-transform duration-300 group">
                 <div className="aspect-square bg-slate-100 mb-3 overflow-hidden rounded-sm border border-slate-200 relative">
-                  <img src={b.imageUrl ?? bouquetSvgUrl(b.flowers, b.extras)} alt="Bouquet" style={{ imageRendering: 'pixelated' }} className="w-full h-full object-cover" />
+                  <img src={showPixel(b) ? b.imageUrl : bouquetSvgUrl(b.flowers, b.extras, b.layout)} alt="Bouquet" style={{ imageRendering: 'pixelated' }} className="w-full h-full object-cover" />
+                  {b.imageUrl && (
+                    <button
+                      onClick={() => flip(b.id)}
+                      className="absolute bottom-2 left-2 px-2.5 py-1.5 bg-white/90 text-slate-800 rounded-lg shadow text-xs font-bold border border-slate-300 hover:bg-white"
+                      title={showPixel(b) ? 'Show my arrangement' : 'Show the pixel-art picture'}
+                    >
+                      {showPixel(b) ? '💐 Mine' : '✨ Pixel art'}
+                    </button>
+                  )}
                   {/* Download button overlay */}
                   <button
                     onClick={() => downloadImage(b)}
@@ -74,12 +88,12 @@ export const Gallery: React.FC<GalleryProps> = ({ bouquets, onBack }) => {
                 </div>
                 <div className="font-mono text-xs text-slate-500 border-t border-slate-100 pt-2">
                   <p className="font-bold text-slate-800 uppercase mb-1">{b.date}</p>
-                  <p className="leading-tight">{b.flowers.join(', ')}</p>
+                  <p className="leading-tight line-clamp-2">{b.flowers.join(', ')}</p>
                   {b.extras && b.extras.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-1.5">
+                    <div className="flex flex-wrap gap-0.5 mt-1">
                       {b.extras.map((k, i) => (
-                        <span key={i} className="px-1.5 py-0.5 rounded-full bg-pink-50 border border-pink-200 text-pink-700 whitespace-nowrap">
-                          {POCKET_INFO[k]?.emoji} {POCKET_INFO[k]?.name ?? k}
+                        <span key={i} title={POCKET_INFO[k]?.name ?? k} className="inline-flex items-center gap-0.5 pl-0.5 pr-1 rounded-full bg-pink-50 border border-pink-200 text-pink-700 whitespace-nowrap text-[10px] leading-4">
+                          <ItemIcon kind={k} className="w-3.5 h-3.5" />{POCKET_INFO[k]?.name ?? k}
                         </span>
                       ))}
                     </div>

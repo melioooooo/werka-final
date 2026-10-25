@@ -1,6 +1,6 @@
 // Keyboard (WASD/arrows, E/Space) and touch: a floating joystick wherever a finger lands on the
 // left half of the screen, plus the contextual action button.
-export const input = { action: false };
+export const input = { action: false, stick: true }; // stick: false while the canvas is used for something else (bouquet studio)
 
 const keys = new Set<string>();
 const joy = { x: 0, y: 0 };
@@ -42,7 +42,7 @@ export function initInput(canvas: HTMLCanvasElement, stick: HTMLElement, knob: H
   const R = 52;
   let id = -1, ox = 0, oy = 0;
   canvas.addEventListener('pointerdown', e => {
-    if (e.pointerType === 'mouse' || id !== -1 || e.clientX > innerWidth * 0.6) return;
+    if (!input.stick || e.pointerType === 'mouse' || id !== -1 || e.clientX > innerWidth * 0.6) return;
     id = e.pointerId; ox = e.clientX; oy = e.clientY;
     canvas.setPointerCapture(e.pointerId);
     stick.style.transform = `translate(${ox}px, ${oy}px)`;

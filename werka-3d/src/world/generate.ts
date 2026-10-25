@@ -1,6 +1,6 @@
 // Pure world generation: no three.js, no DOM. Same seed string => same World.
 import { SeededRandom } from './rng.ts';
-import { ALL_BIOMES, BIOME_FLOWERS, FLOWER_COLORS, TRINKETS, ELIO_LINES, type Biome } from './data.ts';
+import { ALL_BIOMES, BIOME_FLOWERS, FLOWER_COLORS, TRINKETS, ELIO_LINES, RARITY_WEIGHT, rarityOf, type Biome, type Trinket } from './data.ts';
 
 export const REGION = 80; // one region ~ one 2D screen
 export const HALF = (REGION * 3) / 2; // map spans [-HALF, HALF] on x and z
@@ -273,13 +273,40 @@ function placeExtras(w: World, reach: (x: number, z: number) => boolean) {
     }
     return null;
   };
-  const nT = 6 + Math.floor(rng.next() * 4), nK = 3 + Math.floor(rng.next() * 3);
+  // Shore spot: dry land a short step from the river or a pond.
+  const shoreSpot = () => {
+    for (let t = 0; t < 200; t++) {
+      let x: number, z: number;
+      const p = w.ponds.length && rng.next() < 0.4 ? w.ponds[Math.floor(rng.next() * w.ponds.length)] : null;
+      if (p) {
+        const a = rng.range(0, Math.PI * 2), d = p.r + rng.range(1.7, 3);
+        x = p.x + Math.cos(a) * d; z = p.z + Math.sin(a) * d;
+      } else {
+        x = rng.range(-lim, lim);
+        z = riverZ(w, x) + (rng.next() < 0.5 ? -1 : 1) * (RIVER_HALF + rng.range(0.8, 2.6));
+      }
+      if (!free(x, z, 0.5) || onBridge(w, x, z) || taken.some(o => Math.hypot(o.x - x, o.z - z) < (o === w.elio ? 4 : 1.2))) continue;
+      if (w.trinkets.some(o => Math.hypot(o.x - x, o.z - z) < 9)) continue;
+      return { x, z };
+    }
+    return null;
+  };
+  // Rarity-weighted pick (common 1, uncommon 0.5, rare 0.2, very rare 0.07).
+  const weighted = (list: Trinket[]) => {
+    let r = rng.next() * list.reduce((s, t) => s + RARITY_WEIGHT[rarityOf(t)], 0);
+    for (const t of list) if ((r -= RARITY_WEIGHT[rarityOf(t)]) <= 0) return t;
+    return list[list.length - 1];
+  };
+  const shells = TRINKETS.filter(t => t.shell), land = TRINKETS.filter(t => !t.shell);
+  const nT = 9 + Math.floor(rng.next() * 5), nShore = 2 + Math.floor(rng.next() * 3), nK = 3 + Math.floor(rng.next() * 3);
   for (let i = 0; i < nT; i++) {
-    const p = spot(18);
+    const shore = i < nShore;
+    const p = shore ? shoreSpot() : spot(15);
     if (!p) continue;
     const b = biomeAt(w, p.x, p.z);
-    const fav = TRINKETS.filter(t => t.biomes.includes(b) && (!t.rare || rng.next() < 0.35));
-    const type = (fav.length && rng.next() < 0.8 ? rng.choice(fav) : rng.choice(TRINKETS.filter(t => !t.rare))).id;
+    const pool = shore ? shells : TRINKETS;
+    const fav = pool.filter(t => t.biomes.includes(b));
+    const type = (fav.length && rng.next() < 0.8 ? weighted(fav) : weighted(shore ? shells : land)).id;
     w.trinkets.push({ id: `t:${i}`, type, ...p });
   }
   for (let i = 0; i < nK; i++) {

@@ -110,8 +110,39 @@ class Kit {
   }
 }
 
+// Bouquet close-up LOD: set while flowerHead() builds, so petals and beads get more segments
+// (still flat shaded). The world keeps the cheap LOD.
+let HI = false;
+const seg = (n: number) => (HI ? n * 2 : n);
+
+// Close-up petal: a 5 x 4 grid, cupped along its length and troughed across, so it catches
+// light in facets instead of reading as a flat card.
+function petalHi(len: number, wid: number, cup: number, tip: number, color: string, shade: number, glow: number) {
+  const NU = 5, NV = 4, P: number[][] = [], C: number[] = [];
+  tmpC.set(color);
+  for (let i = 0; i <= NU; i++) for (let j = 0; j <= NV; j++) {
+    const u = i / NU, v = (j / NV) * 2 - 1;
+    const w = (wid / 2) * Math.pow(Math.sin(Math.PI * Math.pow(u, 0.8)), 0.5 + 0.7 * (1 - tip));
+    P.push([v * w, cup * Math.pow(u, 1.6) + wid * 0.22 * v * v * Math.sin(Math.PI * u), len * u]);
+    C.push((0.68 + 0.42 * u - 0.05 * Math.abs(v)) * shade * glow);
+  }
+  const pos: number[] = [], col: number[] = [];
+  const put = (k: number) => { pos.push(...P[k]); col.push(tmpC.r * C[k], tmpC.g * C[k], tmpC.b * C[k]); };
+  for (let i = 0; i < NU; i++) for (let j = 0; j < NV; j++) {
+    const a = i * (NV + 1) + j, b = a + NV + 1;
+    if (i > 0) { put(a); put(b); put(a + 1); }
+    put(a + 1); put(b); put(b + 1);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.computeVertexNormals();
+  return g;
+}
+
 // Flat petal along +z: rounded or pointy, tip lifted by `cup`. Base darker, tip lighter.
 function petal(len: number, wid: number, cup: number, tip: number, color: string, shade = 1, glow = 1) {
+  if (HI) return petalHi(len, wid, cup, tip, color, shade, glow);
   const w = wid / 2, tz = len * (0.55 + 0.25 * tip);
   const P = [
     [0, 0, 0], [-w * 0.55, cup * 0.08, len * 0.22], [-w, cup * 0.35, tz], [0, cup, len],
@@ -148,15 +179,15 @@ function addLayers(kit: Kit, frame: THREE.Matrix4, layers: Layer[], color: strin
 
 function addCenter(kit: Kit, frame: THREE.Matrix4, c: Center, glow: number) {
   if (c.cone) {
-    const g = new THREE.CylinderGeometry(c.r, c.r * 0.6, c.cone, 8, 1, true).translate(0, c.cone / 2, 0);
+    const g = new THREE.CylinderGeometry(c.r, c.r * 0.6, c.cone, seg(8), HI ? 2 : 1, true).translate(0, c.cone / 2, 0);
     kit.add(g, c.c, frame, 0.8, 1.1, glow);
-    kit.add(new THREE.CircleGeometry(c.r * 0.6, 8).rotateX(-Math.PI / 2).translate(0, 0.01, 0), '#b45309', frame);
+    kit.add(new THREE.CircleGeometry(c.r * 0.6, seg(8)).rotateX(-Math.PI / 2).translate(0, 0.01, 0), '#b45309', frame);
   } else {
-    kit.add(new THREE.IcosahedronGeometry(c.r, 1).scale(1, c.dome ?? 0.6, 1), c.c, frame, 0.8, 1.1, glow);
+    kit.add(new THREE.IcosahedronGeometry(c.r, HI ? 2 : 1).scale(1, c.dome ?? 0.6, 1), c.c, frame, 0.8, 1.1, glow);
   }
 }
 
-const bead = (r: number) => new THREE.IcosahedronGeometry(r, 0);
+const bead = (r: number) => new THREE.IcosahedronGeometry(r, HI ? 1 : 0);
 
 function buildHead(kit: Kit, frame: THREE.Matrix4, s: Spec, color: string) {
   const glow = s.glow ?? 1, h = s.head;
@@ -180,7 +211,7 @@ function buildHead(kit: Kit, frame: THREE.Matrix4, s: Spec, color: string) {
         const y = h.hang ? -t * h.len : t * h.len;
         const side = (i % 2 ? 1 : -1) * r * 0.5;
         if (h.bell) {
-          const g = new THREE.ConeGeometry(r, r * 2.2, 6, 1, true).rotateX(Math.PI).rotateZ(side > 0 ? -0.7 : 0.7);
+          const g = new THREE.ConeGeometry(r, r * 2.2, seg(6), HI ? 2 : 1, true).rotateX(Math.PI).rotateZ(side > 0 ? -0.7 : 0.7);
           kit.add(g, color, at(side * 1.6, y, 0, M().makeRotationY(i * 2.4)), 1.05, 0.75, glow);
         } else {
           kit.add(bead(r), color, at(side, y, (i % 3 - 1) * r * 0.4), 0.85, 1.1, glow);
@@ -191,7 +222,7 @@ function buildHead(kit: Kit, frame: THREE.Matrix4, s: Spec, color: string) {
       for (let i = 0; i < h.n; i++) {
         const x = 0.05 + i * 0.09, y = -0.04 - i * 0.03;
         kit.add(new THREE.CylinderGeometry(0.008, 0.008, 0.08, 3).translate(0, -0.04, 0), GREEN, at(x, y + 0.04, 0));
-        kit.add(new THREE.ConeGeometry(h.r, h.r * 1.9, 6, 1, true).rotateX(Math.PI).translate(0, -h.r * 0.9, 0), color, at(x, y - 0.03, 0), 1.1, 0.75, glow);
+        kit.add(new THREE.ConeGeometry(h.r, h.r * 1.9, seg(6), HI ? 2 : 1, true).rotateX(Math.PI).translate(0, -h.r * 0.9, 0), color, at(x, y - 0.03, 0), 1.1, 0.75, glow);
         kit.add(bead(h.r * 0.35), '#fef3c7', at(x, y - 0.13 - h.r, 0), 1, 1, glow);
       }
       break;
@@ -218,6 +249,7 @@ function buildHead(kit: Kit, frame: THREE.Matrix4, s: Spec, color: string) {
       }
       break;
     case 'cactus': {
+      if (HI) { addLayers(kit, frame, [[7, .16, .09, .75, .02, .5]], color, glow); addCenter(kit, frame, C(.04, '#fde68a'), glow); break; }
       kit.add(new THREE.CylinderGeometry(0.15, 0.2, 0.6, 8).translate(0, 0.3, 0), '#3f8f4f', frame, 0.75, 1.05);
       kit.add(new THREE.IcosahedronGeometry(0.15, 1).scale(1, 0.6, 1).translate(0, 0.6, 0), '#4ea35d', frame);
       kit.add(new THREE.CylinderGeometry(0.06, 0.07, 0.25, 6).translate(0, 0.12, 0), '#3f8f4f', at(0.2, 0.25, 0, M().makeRotationZ(-0.4)));
@@ -228,7 +260,7 @@ function buildHead(kit: Kit, frame: THREE.Matrix4, s: Spec, color: string) {
       break;
     }
     case 'pad': {
-      kit.add(new THREE.CircleGeometry(0.42, 11, 0.3, Math.PI * 2 - 0.6).rotateX(-Math.PI / 2).translate(0, 0.03, 0), '#2f8a3e', frame);
+      if (!HI) kit.add(new THREE.CircleGeometry(0.42, 11, 0.3, Math.PI * 2 - 0.6).rotateX(-Math.PI / 2).translate(0, 0.03, 0), '#2f8a3e', frame);
       const f = at(0, 0.05, 0);
       addLayers(kit, f, h.layers, color, glow);
       if (h.center) addCenter(kit, f, h.center, glow);
@@ -236,9 +268,9 @@ function buildHead(kit: Kit, frame: THREE.Matrix4, s: Spec, color: string) {
     }
     case 'shroom': {
       kit.add(new THREE.CylinderGeometry(0.05, 0.07, 0.3, 6).translate(0, 0.15, 0), '#f5f0e6', frame, 0.8, 1.2, glow * 0.6);
-      kit.add(new THREE.SphereGeometry(0.2, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.7, 1).translate(0, 0.28, 0), color, frame, 0.7, 1.1, glow);
+      kit.add(new THREE.SphereGeometry(0.2, seg(8), seg(4), 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.7, 1).translate(0, 0.28, 0), color, frame, 0.7, 1.1, glow);
       for (let i = 0; i < 5; i++) kit.add(bead(0.025), '#ecfeff', at(Math.cos(i * 1.3) * 0.12, 0.38 - (i % 2) * 0.03, Math.sin(i * 1.3) * 0.12), 1, 1, glow);
-      kit.add(new THREE.SphereGeometry(0.11, 6, 3, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.7, 1).translate(0.22, 0.14, 0.05), color, frame, 0.7, 1.1, glow);
+      kit.add(new THREE.SphereGeometry(0.11, seg(6), seg(3), 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.7, 1).translate(0.22, 0.14, 0.05), color, frame, 0.7, 1.1, glow);
       kit.add(new THREE.CylinderGeometry(0.03, 0.04, 0.14, 5).translate(0.22, 0.07, 0.05), '#f5f0e6', frame, 1, 1, glow * 0.6);
       break;
     }
@@ -262,11 +294,11 @@ function buildHead(kit: Kit, frame: THREE.Matrix4, s: Spec, color: string) {
       }
       break;
     case 'cattail':
-      kit.add(new THREE.CylinderGeometry(0.06, 0.06, 0.32, 7).translate(0, 0.16, 0), color, frame, 0.85, 1.05);
+      kit.add(new THREE.CylinderGeometry(0.06, 0.06, 0.32, seg(7), HI ? 3 : 1).translate(0, 0.16, 0), color, frame, 0.85, 1.05);
       kit.add(new THREE.CylinderGeometry(0.008, 0.008, 0.18, 3).translate(0, 0.4, 0), '#a3a35a', frame);
       break;
     case 'cushion':
-      kit.add(new THREE.IcosahedronGeometry(0.32, 1).scale(1, 0.38, 1).translate(0, 0.04, 0), '#3d7a3a', frame, 0.75, 1.05);
+      kit.add(new THREE.IcosahedronGeometry(HI ? 0.24 : 0.32, HI ? 2 : 1).scale(1, 0.38, 1).translate(0, 0.04, 0), '#3d7a3a', frame, 0.75, 1.05);
       for (let i = 0; i < 14; i++) {
         const a = i * 2.39996, r = 0.26 * Math.sqrt((i + 0.5) / 14);
         kit.add(bead(0.04), color, at(Math.cos(a) * r, 0.14 - r * 0.25, Math.sin(a) * r), 0.95, 1.1, glow);
@@ -327,4 +359,22 @@ export function flowerGeometry(type: string): THREE.BufferGeometry {
   return g;
 }
 
+// Bouquet LOD: the head alone (no stem or leaves), more segments, origin where the stem ends,
+// +y out of the flower. Lily pads and the cactus body are left out so heads pack on a dome.
+const headCache = new Map<string, THREE.BufferGeometry>();
+export function flowerHead(type: string): THREE.BufferGeometry {
+  const hit = headCache.get(type);
+  if (hit) return hit;
+  const s = SPECS[type] ?? SPECS['Wildflower'];
+  const kit = new Kit();
+  HI = true;
+  try { buildHead(kit, M(), s, FLOWER_COLORS[type] ?? '#f472b6'); } finally { HI = false; }
+  // A little calyx so the stem joins the head cleanly.
+  kit.add(new THREE.ConeGeometry(0.05, 0.09, 7).rotateX(Math.PI).translate(0, -0.02, 0), GREEN, undefined, 0.8, 1.05);
+  const g = kit.build();
+  headCache.set(type, g);
+  return g;
+}
+
 export const FLOWER_TYPES = Object.keys(SPECS);
+export const headKind = (type: string) => (SPECS[type] ?? SPECS['Wildflower']).head.k;

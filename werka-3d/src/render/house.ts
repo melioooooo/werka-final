@@ -1,10 +1,9 @@
 // Cottage interior (dollhouse cut-away, front wall open), the treasure shelf and the gallery scene.
 import * as THREE from 'three';
-import { buildBouquet } from './bouquet.ts';
 import { toon, addOutlines, outline, bake } from './toon.ts';
+import { pickupGeometry, pickupMat } from './pickups.ts';
 import { adder, flatMat, solidMat, paint, Box, Cyl, Ico, Torus, rnd, pick, heart, TRINKETS, type Add } from './house-kit.ts';
 
-const lam = (color: string) => toon({ color, rim: 0.25 });
 
 // Furniture footprints {x, z, hw, hd} used for collision.
 const SOLID = [
@@ -81,8 +80,10 @@ const glassMat = toon({ color: '#d8eef2', transparent: true, opacity: 0.28, rim:
 const outlineMat = outline('#1f2a2c', 0.022);
 
 // --- Treasures --------------------------------------------------------------------------
-const SLOTS = ['star', 'butterfly', 'marble', 'ring', 'shell', 'feather', 'key', 'button', 'ribbon', 'acorn', 'pebble', 'kiss'];
-const SHELF = { x: 4.8, z: -4.92, rows: [3.45, 2.6, 1.75], cols: [-1.2, -0.4, 0.4, 1.2] };
+// Display order on the shelf; collected ones fill the cushions in this order (6 x 3).
+const SLOTS = ['star', 'black_pearl', 'pearl', 'moon_charm', 'butterfly', 'marble', 'crystal', 'pink_shell', 'spiral_shell', 'scallop', 'shell', 'ring',
+  'bell', 'amber', 'clover', 'ladybug', 'feather', 'key', 'button', 'ribbon', 'acorn', 'pebble', 'kiss'];
+const SHELF = { x: 4.8, z: -4.92, rows: [3.45, 2.6, 1.75], cols: [-1.35, -0.81, -0.27, 0.27, 0.81, 1.35] };
 let treasureState = { items: [] as string[], kisses: 0 };
 let treasureHost: THREE.Group | null = null;
 let goldHeart: THREE.Object3D | null = null;
@@ -117,12 +118,19 @@ function rebuildTreasures() {
   const have = new Set(items);
   if (kisses > 0) have.add('kiss');
   const g = new THREE.Group();
-  SLOTS.forEach((id, i) => {
-    if (!have.has(id)) return;
+  const nc = SHELF.cols.length;
+  SLOTS.filter(id => have.has(id)).slice(0, nc * SHELF.rows.length).forEach((id, i) => {
     const t = new THREE.Group();
-    TRINKETS[id](adder(t), t);
-    t.position.set(SHELF.x + SHELF.cols[i % 4], SHELF.rows[Math.floor(i / 4)] + 0.06, SHELF.z + 0.05);
-    t.scale.setScalar(1.4); // read from the high camera on a phone
+    if (TRINKETS[id]) TRINKETS[id](adder(t), t);
+    else {
+      // v4 trinkets: the pickup model, sat on its cushion.
+      const m = new THREE.Mesh(pickupGeometry(id), pickupMat);
+      m.scale.setScalar(0.55);
+      m.position.y = 0.19;
+      t.add(m);
+    }
+    t.position.set(SHELF.x + SHELF.cols[i % nc], SHELF.rows[Math.floor(i / nc)] + 0.06, SHELF.z + 0.05);
+    t.scale.setScalar(1.15); // read from the high camera on a phone
     g.add(t);
   });
   // Kiss jar: one little heart per kiss (up to 14), plus the counter plaque.
@@ -609,31 +617,11 @@ export function buildInterior() {
   return { scene, update };
 }
 
+// Gallery / arrange scene: set dressing and lights live in studio.ts.
 export function buildGallery() {
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color('#e9eddc');
-  const ped = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.3, 0.6, 16), lam('#c8b89a'));
-  ped.position.y = -1.2;
-  ped.receiveShadow = true;
-  const floor = new THREE.Mesh(new THREE.CircleGeometry(8, 32).rotateX(-Math.PI / 2), lam('#d9dfc6'));
-  floor.position.y = -1.5;
-  floor.receiveShadow = true;
-  const key = new THREE.DirectionalLight('#fff4e0', 2);
-  key.position.set(3, 6, 4);
-  key.castShadow = true;
-  scene.add(ped, floor, key, new THREE.HemisphereLight('#ffffff', '#9aa58a', 1.4));
-  const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 50);
-  camera.position.set(0, 1.2, 5.2);
-  camera.lookAt(0, 0.2, 0);
-
-  let current: THREE.Group | null = null;
-  const show = (types: string[] | null) => {
-    if (current) scene.remove(current);
-    current = types ? buildBouquet(types) : null;
-    if (current) { current.position.y = -0.3; scene.add(current); }
-  };
-  const update = (time: number) => { if (current) current.rotation.y = time * 0.5; };
-  return { scene, camera, show, update };
+  const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 60);
+  return { scene, camera };
 }
 
 if (import.meta.env.DEV) Object.assign(window, { __houseTreasures: setHouseTreasures });
