@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { MAX_INVENTORY } from '../world/data.ts';
 import { toon, addOutlines, bakeColors } from './toon.ts';
+import { TOPS, BOTTOMS, SCARVES, GLASSES, HATS, DEFAULT_OUTFIT, type Outfit } from '../world/outfits.ts';
 
 const mats = new Map<string, THREE.Material>();
 const mat = (color: string) => {
@@ -32,29 +33,61 @@ export function flatten(g: THREE.Object3D) {
   }
 }
 
-export function buildPlayer() {
-  const root = new THREE.Group();
+const SKIN = '#f2c9a0';
+const tiny = (m: THREE.Mesh) => { m.castShadow = false; m.userData.noOutline = true; return m; };
+
+// Everything that changes with the outfit, rebuilt whole when she gets dressed.
+function buildBody(o: Outfit) {
+  const top = TOPS.find(t => t.id === o.top)!, bottom = BOTTOMS.find(b => b.id === o.bottom)!;
   const body = new THREE.Group(); // bobs and leans while walking
-  root.add(body);
 
   const legs = [-0.14, 0.14].map(x => {
     const leg = new THREE.Group();
     leg.position.set(x, 0.42, 0);
-    leg.add(mesh(new THREE.CylinderGeometry(0.07, 0.065, 0.36, 6).translate(0, -0.2, 0), '#3b3a4a'));
-    leg.add(mesh(new THREE.IcosahedronGeometry(0.09, 0).scale(1, 0.6, 1.4), '#5a3a28', 0, -0.4, 0.04));
+    leg.add(mesh(new THREE.CylinderGeometry(0.07, 0.065, 0.36, 6).translate(0, -0.2, 0), bottom.legs));
+    if (bottom.kind === 'shorts') leg.add(mesh(new THREE.CylinderGeometry(0.095, 0.1, 0.13, 7).translate(0, -0.03, 0), bottom.color));
+    leg.add(mesh(new THREE.IcosahedronGeometry(0.09, 0).scale(1, 0.6, 1.4), bottom.kind === 'pants' || bottom.kind === 'overalls' ? '#e8e2d6' : '#5a3a28', 0, -0.4, 0.04));
     body.add(leg);
     return leg;
   });
-  const dress = mesh(new THREE.ConeGeometry(0.5, 0.78, 9), '#e58fa8', 0, 0.74, 0);
-  const hem = mesh(new THREE.CylinderGeometry(0.47, 0.5, 0.08, 9), '#c96d8a', 0, 0.39, 0);
-  const torso = mesh(new THREE.CylinderGeometry(0.2, 0.27, 0.36, 8), '#f3dc8a', 0, 1.15, 0);
-  body.add(dress, hem, torso);
+  if (bottom.kind === 'dress') {
+    body.add(mesh(new THREE.ConeGeometry(0.5, 0.78, 9), bottom.color, 0, 0.74, 0), mesh(new THREE.CylinderGeometry(0.47, 0.5, 0.08, 9), bottom.accent, 0, 0.39, 0));
+  } else if (bottom.kind === 'long') {
+    body.add(mesh(new THREE.ConeGeometry(0.54, 1.06, 10), bottom.color, 0, 0.6, 0), mesh(new THREE.CylinderGeometry(0.5, 0.54, 0.08, 10), bottom.accent, 0, 0.11, 0));
+  } else if (bottom.kind === 'mini') {
+    body.add(mesh(new THREE.CylinderGeometry(0.25, 0.42, 0.42, 10), bottom.color, 0, 0.8, 0), mesh(new THREE.CylinderGeometry(0.41, 0.43, 0.05, 10), bottom.accent, 0, 0.58, 0));
+  } else { // pants, shorts, overalls: hips down to the legs
+    body.add(mesh(new THREE.CylinderGeometry(0.25, 0.27, 0.56, 9), bottom.color, 0, 0.7, 0));
+    if (bottom.kind === 'overalls') {
+      body.add(mesh(new THREE.BoxGeometry(0.28, 0.3, 0.05), bottom.color, 0, 1.1, 0.205));
+      body.add(tiny(mesh(new THREE.BoxGeometry(0.13, 0.1, 0.012), bottom.accent, 0, 1.08, 0.235)));
+      for (const sx of [-1, 1]) {
+        body.add(mesh(new THREE.BoxGeometry(0.05, 0.05, 0.42), bottom.color, sx * 0.1, 1.27, 0));
+        body.add(tiny(mesh(new THREE.SphereGeometry(0.022, 5, 4), bottom.accent, sx * 0.1, 1.22, 0.235)));
+      }
+    }
+  }
+  const torso = mesh(new THREE.CylinderGeometry(0.2, 0.27, 0.36, 8), top.color, 0, 1.15, 0);
+  body.add(torso);
+  if (top.kind === 'stripes') for (const y of [1.03, 1.13, 1.23]) body.add(tiny(mesh(new THREE.CylinderGeometry(0.2 + (1.33 - y) * 0.2 + 0.006, 0.2 + (1.33 - y) * 0.2 + 0.012, 0.035, 8), top.accent, 0, y, 0)));
+  if (top.kind === 'knit') body.add(mesh(new THREE.CylinderGeometry(0.17, 0.2, 0.08, 8), top.accent, 0, 1.33, 0), mesh(new THREE.CylinderGeometry(0.275, 0.285, 0.06, 8), top.accent, 0, 0.98, 0));
+  if (top.kind === 'cardigan') {
+    body.add(tiny(mesh(new THREE.BoxGeometry(0.12, 0.34, 0.02), top.accent, 0, 1.15, 0.235)));
+    for (const y of [1.06, 1.15, 1.24]) body.add(tiny(mesh(new THREE.SphereGeometry(0.018, 5, 4), '#b4607a', 0.07, y, 0.245)));
+  }
+  if (top.kind === 'blouse') body.add(mesh(new THREE.CylinderGeometry(0.19, 0.21, 0.04, 8), top.accent, 0, 1.325, 0));
 
   const arms = [-1, 1].map(side => {
     const arm = new THREE.Group();
     arm.position.set(side * 0.27, 1.27, 0);
-    arm.add(mesh(new THREE.CylinderGeometry(0.06, 0.055, 0.36, 5).translate(0, -0.18, 0), '#f3dc8a'));
-    arm.add(mesh(new THREE.IcosahedronGeometry(0.07, 0), '#f2c9a0', 0, -0.38, 0));
+    if (top.kind === 'tee') {
+      arm.add(mesh(new THREE.CylinderGeometry(0.068, 0.064, 0.15, 5).translate(0, -0.075, 0), top.color));
+      arm.add(mesh(new THREE.CylinderGeometry(0.054, 0.05, 0.22, 5).translate(0, -0.25, 0), SKIN));
+    } else {
+      arm.add(mesh(new THREE.CylinderGeometry(0.06, 0.055, 0.36, 5).translate(0, -0.18, 0), top.color));
+      if (top.kind === 'stripes') for (const y of [-0.09, -0.2, -0.3]) arm.add(tiny(mesh(new THREE.CylinderGeometry(0.063, 0.062, 0.03, 5), top.accent, 0, y, 0)));
+    }
+    arm.add(mesh(new THREE.IcosahedronGeometry(0.07, 0), SKIN, 0, -0.38, 0));
     arm.rotation.z = side * 0.25;
     body.add(arm);
     return arm;
@@ -66,9 +99,11 @@ export function buildPlayer() {
   head.add(mesh(new THREE.IcosahedronGeometry(0.4, 1), '#f2c9a0'));
   head.add(mesh(new THREE.IcosahedronGeometry(0.43, 1).scale(1, 0.92, 0.95), '#5a3a28', 0, 0.06, -0.07));
   head.add(mesh(new THREE.IcosahedronGeometry(0.2, 0).scale(1.3, 0.5, 0.6), '#5a3a28', 0, 0.26, 0.24)); // bangs
-  const bun = mesh(new THREE.IcosahedronGeometry(0.17, 0), '#5a3a28', 0, 0.38, -0.3);
+  // Under a hat the bun drops to the nape, so it never pokes through the crown.
+  const bunY = o.hat === 'none' ? 0.38 : 0.02, bunZ = o.hat === 'none' ? -0.3 : -0.42;
+  const bun = mesh(new THREE.IcosahedronGeometry(0.17, 0), '#5a3a28', 0, bunY, bunZ);
   head.add(bun);
-  head.add(mesh(new THREE.TorusGeometry(0.1, 0.03, 4, 8), '#e58fa8', 0, 0.36, -0.22)); // hair tie
+  head.add(mesh(new THREE.TorusGeometry(0.1, 0.03, 4, 8), '#e58fa8', 0, bunY - 0.02, bunZ + 0.08)); // hair tie
   for (const x of [-0.14, 0.14]) {
     const tiny = [
       mesh(new THREE.SphereGeometry(0.055, 6, 4).scale(0.8, 1.15, 0.4), '#23211d', x, -0.02, 0.37),
@@ -77,19 +112,55 @@ export function buildPlayer() {
     ];
     for (const t of tiny) { t.castShadow = false; t.userData.noOutline = true; head.add(t); }
   }
+  // Glasses and hats sit on the head group, so they follow its tilt.
+  const glassesOf = GLASSES.find(g => g.id === o.glasses)!;
+  if (glassesOf.id !== 'none') {
+    const c = glassesOf.color;
+    for (const x of [-0.14, 0.14]) {
+      if (glassesOf.id === 'shades') head.add(tiny(mesh(new THREE.SphereGeometry(0.095, 10, 6).scale(1.08, 0.82, 0.22), c, x, -0.01, 0.375)));
+      if (glassesOf.id === 'round') head.add(tiny(mesh(new THREE.TorusGeometry(0.09, 0.012, 5, 14), c, x, -0.01, 0.385)));
+      if (glassesOf.id === 'hearts') {
+        for (const sx of [-1, 1]) head.add(tiny(mesh(new THREE.SphereGeometry(0.05, 8, 5).scale(1, 1, 0.25), c, x + sx * 0.04, 0.012, 0.385)));
+        head.add(tiny(mesh(new THREE.ConeGeometry(0.09, 0.09, 4).rotateZ(Math.PI).scale(1, 1, 0.15), c, x, -0.05, 0.385)));
+      }
+      head.add(tiny(mesh(new THREE.BoxGeometry(0.012, 0.012, 0.3), c, x * 2.75, 0.01, 0.23)));
+    }
+    head.add(tiny(mesh(new THREE.BoxGeometry(0.1, 0.014, 0.014), c, 0, 0.01, 0.39)));
+  }
+  const hatOf = HATS.find(h => h.id === o.hat)!;
+  if (hatOf.id === 'straw') {
+    head.add(mesh(new THREE.CylinderGeometry(0.62, 0.66, 0.04, 14), hatOf.color, 0, 0.27, -0.03));
+    head.add(mesh(new THREE.CylinderGeometry(0.3, 0.36, 0.24, 12), hatOf.color, 0, 0.4, -0.03));
+    head.add(mesh(new THREE.CylinderGeometry(0.365, 0.37, 0.07, 12), '#e58fa8', 0, 0.32, -0.03));
+  } else if (hatOf.id === 'beret') {
+    const b = mesh(new THREE.IcosahedronGeometry(0.42, 2).scale(1.08, 0.36, 1.08), hatOf.color, 0.05, 0.36, -0.02);
+    b.rotation.z = -0.2;
+    head.add(b, mesh(new THREE.SphereGeometry(0.035, 5, 4), hatOf.color, 0.02, 0.52, -0.02));
+  } else if (hatOf.id === 'beanie') {
+    head.add(mesh(new THREE.IcosahedronGeometry(0.42, 2).scale(1.02, 0.78, 1.02), hatOf.color, 0, 0.2, -0.04));
+    head.add(mesh(new THREE.CylinderGeometry(0.435, 0.44, 0.11, 12), '#5a7a9a', 0, 0.2, -0.04));
+    head.add(mesh(new THREE.IcosahedronGeometry(0.1, 1), '#f6efe0', 0, 0.56, -0.04));
+  } else if (hatOf.id === 'bucket') {
+    head.add(mesh(new THREE.CylinderGeometry(0.33, 0.4, 0.26, 12), hatOf.color, 0, 0.36, -0.03));
+    head.add(mesh(new THREE.CylinderGeometry(0.42, 0.58, 0.11, 12), '#b39e76', 0, 0.21, -0.03));
+  }
   body.add(head);
 
   // Scarf: neck ring + 4 trailing segments that wave with speed and wind.
-  body.add(mesh(new THREE.TorusGeometry(0.22, 0.07, 5, 10).rotateX(Math.PI / 2), '#e0574f', 0, 1.36, 0));
+  const scarfOf = SCARVES.find(c => c.id === o.scarf)!;
   const scarf: THREE.Object3D[] = [];
-  let parent: THREE.Object3D = body;
-  for (let i = 0; i < 4; i++) {
-    const seg = new THREE.Group();
-    seg.position.set(i === 0 ? 0.1 : 0, i === 0 ? 1.34 : 0, i === 0 ? -0.2 : -0.18);
-    seg.add(mesh(new THREE.BoxGeometry(0.15 - i * 0.015, 0.05, 0.2).translate(0, 0, -0.09), i % 2 ? '#c9463f' : '#e0574f'));
-    parent.add(seg);
-    scarf.push(seg);
-    parent = seg;
+  if (scarfOf.colors.length) {
+    const [c0, c1] = scarfOf.colors;
+    body.add(mesh(new THREE.TorusGeometry(0.22, 0.07, 5, 10).rotateX(Math.PI / 2), c0, 0, 1.36, 0));
+    let parent: THREE.Object3D = body;
+    for (let i = 0; i < 4; i++) {
+      const seg = new THREE.Group();
+      seg.position.set(i === 0 ? 0.1 : 0, i === 0 ? 1.34 : 0, i === 0 ? -0.2 : -0.18);
+      seg.add(mesh(new THREE.BoxGeometry(0.15 - i * 0.015, 0.05, 0.2).translate(0, 0, -0.09), i % 2 ? c1 : c0));
+      parent.add(seg);
+      scarf.push(seg);
+      parent = seg;
+    }
   }
 
   // Basket on her right hand, filled with one bead per picked flower.
@@ -109,6 +180,14 @@ export function buildPlayer() {
   bun.userData.keep = true;
   for (const g of [head, body, basket, ...legs, ...arms]) flatten(g);
   addOutlines(body, 0.022);
+
+  return { body, legs, arms, torso, head, bun, bunY, bunZ, scarf, basket, beads };
+}
+
+export function buildPlayer(outfit: Outfit = DEFAULT_OUTFIT) {
+  const root = new THREE.Group();
+  let parts = buildBody(outfit);
+  root.add(parts.body);
 
   // Soft contact shadow so she stays grounded even where the shadow map is coarse.
   const blob = new THREE.Mesh(new THREE.CircleGeometry(0.6, 20).rotateX(-Math.PI / 2),
@@ -138,6 +217,7 @@ export function buildPlayer() {
   let phase = 0, lean = 0, hopT = 9;
   const hop = () => { hopT = 0; };
   const animate = (dt: number, speed: number, time: number) => {
+    const { body, legs, arms, torso, head, bun, bunY, bunZ, scarf, basket } = parts;
     phase += dt * Math.max(speed, 0.0001) * 1.5;
     const s = Math.min(1, speed / 5);
     const r = Math.min(1, Math.max(0, (speed - 7.5) / 4)); // 0 walk .. 1 full run
@@ -146,8 +226,8 @@ export function buildPlayer() {
     body.position.y = Math.abs(Math.sin(phase)) * (0.1 + 0.08 * r) * s + Math.sin(time * 2) * 0.012 * (1 - s) + hopY;
     // Idle breathing and hair that lags a beat behind the body.
     torso.scale.set(1 + Math.sin(time * 2.2) * 0.02 * (1 - s), 1 + Math.sin(time * 2.2) * 0.035 * (1 - s), 1);
-    bun.position.y = 0.38 + Math.sin(phase * 2 - 0.9) * 0.035 * s + Math.sin(time * 2.2 - 0.8) * 0.01 + (hopT < 0.38 ? -hopY * 0.12 : 0);
-    bun.position.z = -0.3 - 0.05 * s;
+    bun.position.y = bunY + Math.sin(phase * 2 - 0.9) * 0.035 * s + Math.sin(time * 2.2 - 0.8) * 0.01 + (hopT < 0.38 ? -hopY * 0.12 : 0);
+    bun.position.z = bunZ - 0.05 * s;
     blob.scale.setScalar(1 - hopY * 0.5);
     (blob.material as THREE.MeshBasicMaterial).opacity = 0.38 - hopY * 0.3;
     for (const p of puffs) {
@@ -174,7 +254,10 @@ export function buildPlayer() {
   };
 
   const m = new THREE.Matrix4(), col = new THREE.Color();
+  let basketColors: string[] = [];
   const setBasket = (colors: string[]) => {
+    basketColors = colors;
+    const { beads } = parts;
     colors.forEach((cl, i) => {
       const a = i * 2.4, r = 0.05 + (i % 3) * 0.05;
       beads.setMatrixAt(i, m.makeTranslation(Math.cos(a) * r, 0.06 + Math.floor(i / 6) * 0.06, Math.sin(a) * r));
@@ -184,7 +267,14 @@ export function buildPlayer() {
     beads.instanceMatrix.needsUpdate = true;
     if (beads.instanceColor) beads.instanceColor.needsUpdate = true;
   };
-  const basketWorld = (out: THREE.Vector3) => basket.getWorldPosition(out);
+  const basketWorld = (out: THREE.Vector3) => parts.basket.getWorldPosition(out);
+  const dress = (o: Outfit) => {
+    root.remove(parts.body);
+    parts.body.traverse(n => (n as THREE.Mesh).geometry?.dispose());
+    parts = buildBody(o);
+    root.add(parts.body);
+    setBasket(basketColors);
+  };
 
-  return { root, animate, setBasket, basketWorld, dust, puff, hop };
+  return { root, animate, setBasket, basketWorld, dust, puff, hop, dress };
 }

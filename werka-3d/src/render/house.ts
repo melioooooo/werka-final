@@ -18,10 +18,13 @@ const SOLID = [
   { x: -6.55, z: 2.75, hw: 0.45, hd: 0.85 }, // bench
   { x: -6.15, z: 4.85, hw: 0.6, hd: 0.6 }, // potted plant
   { x: 6.15, z: 5.15, hw: 0.45, hd: 0.45 }, // flower bucket
+  { x: 6.2, z: 0.4, hw: 0.42, hd: 0.72 }, // wardrobe
 ];
 export const ROOM = { hw: 6.6, back: -4.6, front: 6 };
 export const TABLE = { x: 0, z: -2.4 }; // stand here to craft
 export const EXIT = { x: 0, z: 5.6 }; // door mat
+export const WARDROBE = { x: 5, z: 0.4 }; // stand here to change
+export const WARDROBE_PREVIEW = { x: 1.2, z: 1.2 }; // open floor, nothing between her and the camera
 
 export function interiorBlocked(x: number, z: number, r = 0.45) {
   if (Math.abs(x) > ROOM.hw - r || z < ROOM.back + r || z > ROOM.front) return true;
@@ -397,6 +400,15 @@ function buildStatic() {
   a(Cyl(0.19, 0.17, 0.12, 10), '#b58350', 3.75, 1.74, -4.55);
   a(Torus(0.24, 0.025, 14).rotateX(Math.PI / 2), '#e0567f', 3.75, 1.6, -4.55);
 
+  // Wardrobe on the right wall, its doors facing the room, a hat on top and a dress hanging by the side.
+  a(Box(0.72, 2.9, 1.4), WOOD, 6.25, 1.5, 0.4);
+  a(Box(0.04, 2.6, 0.64), '#c79a68', 5.88, 1.52, 0.06);
+  a(Box(0.04, 2.6, 0.64), '#c79a68', 5.88, 1.52, 0.74);
+  for (const z of [0.3, 0.5]) a(Ico(0.045, 0), '#e8c766', 5.85, 1.5, z);
+  a(Box(0.82, 0.1, 1.5), BEAM, 6.25, 3, 0.4);
+  a(Cyl(0.3, 0.34, 0.05, 12), '#e6cf94', 6.25, 3.08, 0.4);
+  a(Cyl(0.16, 0.2, 0.15, 10), '#e6cf94', 6.25, 3.16, 0.4);
+  a(Cyl(0.205, 0.205, 0.04, 10), '#e58fa8', 6.25, 3.11, 0.4);
   // Bed along the left wall, patchwork quilt.
   const BX = -5.95;
   a(Box(2.0, 0.45, 3.7), WOOD, BX, 0.38, -0.9);

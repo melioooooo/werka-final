@@ -5,7 +5,7 @@ import { FLOWER_COLORS, DAY_CYCLE_DURATION, MAX_INVENTORY, MAX_POCKET, POCKET_IN
 import { state, load, save, today, type Bouquet } from './state.ts';
 import { buildOutdoor } from './render/outdoor.ts';
 import { buildPlayer } from './render/player.ts';
-import { buildInterior, buildGallery, interiorBlocked, interiorCamera, setHouseTreasures, TABLE, EXIT } from './render/house.ts';
+import { buildInterior, buildGallery, interiorBlocked, interiorCamera, setHouseTreasures, TABLE, EXIT, WARDROBE, WARDROBE_PREVIEW } from './render/house.ts';
 import { buildPickups, heartBurst, pickupGeometry } from './render/pickups.ts';
 import { buildElio } from './render/elio.ts';
 import { buildStudio } from './render/studio.ts';
@@ -20,7 +20,7 @@ import { initInput, readMove, consumeAction, running, input } from './input/inpu
 import { startAudio, ambience, sfx, isMuted, toggleMute } from './audio.ts';
 import * as ui from './ui/ui.ts';
 
-type Mode = 'menu' | 'intro' | 'outdoor' | 'talk' | 'house' | 'craft' | 'arrange' | 'gallery';
+type Mode = 'menu' | 'intro' | 'outdoor' | 'talk' | 'house' | 'craft' | 'arrange' | 'gallery' | 'wardrobe';
 
 load();
 const world = generateWorld(state.date);
@@ -44,7 +44,7 @@ const outdoor = buildOutdoor(world);
 const interior = buildInterior();
 const galleryView = buildGallery();
 const studio = buildStudio(canvas, galleryView);
-const player = buildPlayer();
+const player = buildPlayer(state.outfit);
 outdoor.scene.add(player.root, player.dust);
 // Trinkets, kisses and Elio (ids 't:'/'k:' share the picked set with flowers).
 const pickups = buildPickups([...world.trinkets, ...world.kisses], (x, z) => walkY(world, x, z));
@@ -165,6 +165,32 @@ function enterHouse() {
   camTarget.copy(pos);
   ui.setPlaying(true);
   refreshBasket();
+}
+
+// Wardrobe: close camera on Werka turning slowly, panel of chips beside her (below her on portrait).
+function openWardrobe() {
+  mode = 'wardrobe';
+  ui.setAction(null); ui.setPlaying(false); ui.setHud(null);
+  // She steps onto the open floor for the preview: by the wardrobe the armchair would hide her.
+  pos.set(WARDROBE_PREVIEW.x, 0, WARDROBE_PREVIEW.z);
+  player.root.position.copy(pos);
+  ui.wardrobe(state.outfit, o => { state.outfit = o; player.dress(o); save(); sfx.ui(); }, () => {
+    pos.set(WARDROBE.x, 0, WARDROBE.z);
+    camTarget.copy(pos);
+    mode = 'house'; ui.setPlaying(true); refreshBasket();
+  });
+}
+function tickWardrobe(dt: number, time: number) {
+  consumeAction();
+  facing = Math.sin(time * 0.8) * 0.85; // sways side to side, always showing her face and glasses
+  player.root.rotation.y = facing;
+  player.animate(dt, 0, time);
+  const portrait = camera.aspect < 1, dist = portrait ? 19 : 12.5;
+  const span = 2 * dist * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+  // Keep her in the half of the screen the panel leaves free.
+  const lookX = portrait ? pos.x : pos.x + span * camera.aspect * 0.22, lookY = portrait ? 1.1 - span * 0.26 : 1.1;
+  camera.position.set(lookX, lookY + Math.sin(0.5) * dist, pos.z + Math.cos(0.5) * dist);
+  camera.lookAt(lookX, lookY, pos.z);
 }
 
 function openCraft(initial?: { picked: number[]; extras: number[] }) {
@@ -407,10 +433,12 @@ function tickHouse(dt: number, time: number) {
   player.root.position.copy(pos);
   const atTable = Math.hypot(pos.x - TABLE.x, pos.z - TABLE.z) < 1.8;
   const atExit = Math.hypot(pos.x - EXIT.x, pos.z - EXIT.z) < 1.4;
-  ui.setAction(atTable ? 'Craft a bouquet' : atExit ? 'Go outside' : null);
+  const atWardrobe = Math.hypot(pos.x - WARDROBE.x, pos.z - WARDROBE.z) < 1.3;
+  ui.setAction(atTable ? 'Craft a bouquet' : atExit ? 'Go outside' : atWardrobe ? 'Change outfit' : null);
   ui.setCompass(null);
   if (consumeAction() && !busy) {
     if (atTable) { sfx.ui(); openCraft(); }
+    else if (atWardrobe) { sfx.ui(); openWardrobe(); }
     else if (atExit) { sfx.door(); run(() => enterOutdoor(DOOR.x, DOOR.z + 1.5, true)); }
   }
   // Same high angle indoors, closer, drifting only a little with Werka.
@@ -450,8 +478,9 @@ renderer.setAnimationLoop(now => {
     U.uCam.value.copy(camera.position);
     ambience(day, false, dt);
     post.draw(outdoor.scene, camera);
-  } else if (mode === 'house' || mode === 'craft') {
+  } else if (mode === 'house' || mode === 'craft' || mode === 'wardrobe') {
     if (mode === 'house') tickHouse(dt, time);
+    else if (mode === 'wardrobe') tickWardrobe(dt, time);
     else { consumeAction(); player.animate(dt, 0, time); }
     U.uCam.value.copy(camera.position);
     interior.update(time, day);
@@ -506,6 +535,7 @@ if (import.meta.env.DEV) {
       gallery: () => openGallery('menu'),
       elio, pickupIcon, closeup: (v: number[] | null) => { devCam = v; },
       setDay: (t: number) => { dayT = t; },
+      enterHouse, openWardrobe,
       get quality() { return quality; },
       setQuality: (q: Quality) => applyQuality(q),
       // Draw calls / triangles for one plain render of the current outdoor view.

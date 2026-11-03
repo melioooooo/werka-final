@@ -2,6 +2,7 @@
 import './style.css';
 import { MAX_INVENTORY, MAX_BOUQUET_SIZE, MAX_POCKET, MAX_EXTRAS, POCKET_INFO } from '../world/data.ts';
 import type { Item, Bouquet } from '../state.ts';
+import { OUTFIT_SLOTS, cleanOutfit, type Outfit } from '../world/outfits.ts';
 
 const root = document.getElementById('ui')!;
 const el = (html: string) => {
@@ -304,6 +305,29 @@ export function arrange(o: { onShuffle: () => void; onBack: () => void; onDone: 
       tools.hidden = !name;
       if (name) { $(tools, '.name').textContent = name; $(tools, '.sz').hidden = !extra; }
     },
+  };
+}
+
+export function wardrobe(outfit: Outfit, onChange: (o: Outfit) => void, onClose: () => void) {
+  let cur = cleanOutfit(outfit);
+  const a = el(`<div class="wardrobe" role="dialog" aria-label="Werka's wardrobe"><div class="card">
+    <h2>Wardrobe</h2>
+    ${OUTFIT_SLOTS.map(s => `<div class="wslot" role="group" aria-label="${s.label}"><span class="lbl">${s.label}</span><div class="chips">${(s.items as readonly { id: string; name: string; color?: string; colors?: string[] }[]).map(i => {
+      const c = i.color ?? i.colors?.[0];
+      return `<button class="chip" data-k="${s.key}" data-v="${i.id}" aria-pressed="${cur[s.key] === i.id}">${c ? `<i style="background:${c}"></i>` : ''}${i.name}</button>`;
+    }).join('')}</div></div>`).join('')}
+    <button class="btn petal done">Looks good</button></div></div>`);
+  const close = () => { removeEventListener('keydown', key); a.remove(); onClose(); };
+  const key = (e: KeyboardEvent) => { if (e.code === 'Escape') close(); };
+  addEventListener('keydown', key);
+  a.onclick = e => {
+    const b = (e.target as HTMLElement).closest<HTMLElement>('button');
+    if (!b) return;
+    if (b.classList.contains('done')) return close();
+    const k = b.dataset.k as keyof Outfit;
+    cur = { ...cur, [k]: b.dataset.v! };
+    a.querySelectorAll<HTMLElement>(`[data-k="${k}"]`).forEach(c => c.setAttribute('aria-pressed', String(c === b)));
+    onChange(cur);
   };
 }
 
