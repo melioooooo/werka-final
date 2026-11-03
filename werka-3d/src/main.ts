@@ -19,6 +19,7 @@ import { U } from './render/toon.ts';
 import { initInput, readMove, consumeAction, running, input } from './input/input.ts';
 import { startAudio, ambience, sfx, isMuted, toggleMute } from './audio.ts';
 import * as ui from './ui/ui.ts';
+import type { Outfit } from './world/outfits.ts';
 import { jumpTo, readJump } from '../../shared/jump.ts';
 import { currentSeason } from '../../shared/season.ts';
 import { resetAll } from '../../shared/save.ts';
@@ -182,22 +183,36 @@ function openWardrobe() {
   // She steps onto the open floor for the preview: by the wardrobe the armchair would hide her.
   pos.set(WARDROBE_PREVIEW.x, 0, WARDROBE_PREVIEW.z);
   player.root.position.copy(pos);
-  ui.wardrobe(state.outfit, o => { state.outfit = o; player.dress(o); save(); sfx.ui(); }, () => {
+  wardrobeSlot = 'top';
+  ui.wardrobe(state.outfit, o => { state.outfit = o; player.dress(o); save(); sfx.ui(); }, k => { wardrobeSlot = k; sfx.ui(); }, () => {
     pos.set(WARDROBE.x, 0, WARDROBE.z);
     camTarget.copy(pos);
     mode = 'house'; ui.setPlaying(true); refreshBasket();
   });
 }
+// The camera closes in on whichever slot is being chosen. dist is the landscape distance.
+const WARDROBE_FOCUS: Record<keyof Outfit, { y: number; dist: number; pitch: number }> = {
+  top: { y: 1.05, dist: 11, pitch: 0.42 },
+  bottom: { y: 0.75, dist: 11, pitch: 0.42 },
+  scarf: { y: 1.4, dist: 7.5, pitch: 0.34 },
+  glasses: { y: 1.62, dist: 6.2, pitch: 0.16 },
+  hat: { y: 1.85, dist: 7, pitch: 0.34 },
+};
+const wardrobeCam = { y: WARDROBE_FOCUS.top.y, dist: WARDROBE_FOCUS.top.dist, pitch: WARDROBE_FOCUS.top.pitch };
+let wardrobeSlot: keyof Outfit = 'top';
 function tickWardrobe(dt: number, time: number) {
   consumeAction();
-  facing = Math.sin(time * 0.8) * 0.85; // sways side to side, always showing her face and glasses
+  facing = Math.sin(time * 0.8) * (wardrobeSlot === 'glasses' ? 0.45 : 0.85); // sways side to side, always showing her face
   player.root.rotation.y = facing;
   player.animate(dt, 0, time);
-  const portrait = camera.aspect < 1, dist = portrait ? 19 : 12.5;
-  const span = 2 * dist * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
-  // Keep her in the half of the screen the panel leaves free.
-  const lookX = portrait ? pos.x : pos.x + span * camera.aspect * 0.22, lookY = portrait ? 1.1 - span * 0.26 : 1.1;
-  camera.position.set(lookX, lookY + Math.sin(0.5) * dist, pos.z + Math.cos(0.5) * dist);
+  const f = WARDROBE_FOCUS[wardrobeSlot], k = Math.min(1, dt * 5), portrait = camera.aspect < 1;
+  wardrobeCam.y += (f.y - wardrobeCam.y) * k;
+  wardrobeCam.dist += (f.dist * (portrait ? 1.5 : 1) - wardrobeCam.dist) * k;
+  wardrobeCam.pitch += (f.pitch - wardrobeCam.pitch) * k;
+  const span = 2 * wardrobeCam.dist * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+  // Keep her in the part of the screen the panel leaves free.
+  const lookX = portrait ? pos.x : pos.x + span * camera.aspect * 0.24, lookY = portrait ? wardrobeCam.y - span * 0.2 : wardrobeCam.y;
+  camera.position.set(lookX, lookY + Math.sin(wardrobeCam.pitch) * wardrobeCam.dist, pos.z + Math.cos(wardrobeCam.pitch) * wardrobeCam.dist);
   camera.lookAt(lookX, lookY, pos.z);
 }
 
@@ -558,6 +573,7 @@ if (import.meta.env.DEV) {
         openArrange(flowers.map((_, i) => i), extras.map((_, i) => i));
       },
       gallery: () => openGallery('menu'),
+      heightAt: (x: number, z: number) => walkY(world, x, z), blocked: (x: number, z: number) => walkBlocked(world, x, z),
       elio, pickupIcon, closeup: (v: number[] | null) => { devCam = v; },
       setDay: (t: number) => { dayT = t; },
       enterHouse, openWardrobe,

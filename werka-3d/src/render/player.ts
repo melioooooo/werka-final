@@ -36,6 +36,54 @@ export function flatten(g: THREE.Object3D) {
 const SKIN = '#f2c9a0';
 const tiny = (m: THREE.Mesh) => { m.castShadow = false; m.userData.noOutline = true; return m; };
 
+const rounded = (w: number, h: number, r: number) => {
+  const q = new THREE.Shape(), x = -w / 2, y = -h / 2;
+  q.moveTo(x + r, y); q.lineTo(x + w - r, y); q.quadraticCurveTo(x + w, y, x + w, y + r);
+  q.lineTo(x + w, y + h - r); q.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  q.lineTo(x + r, y + h); q.quadraticCurveTo(x, y + h, x, y + h - r);
+  q.lineTo(x, y + r); q.quadraticCurveTo(x, y, x + r, y);
+  return q;
+};
+const heartShape = (k: number) => {
+  const q = new THREE.Shape();
+  q.moveTo(0, -k); q.bezierCurveTo(-k * 0.4, -k * 0.6, -k * 1.15, -k * 0.2, -k * 1.05, k * 0.38);
+  q.bezierCurveTo(-k * 0.95, k * 1.0, -k * 0.2, k * 1.0, 0, k * 0.5);
+  q.bezierCurveTo(k * 0.2, k * 1.0, k * 0.95, k * 1.0, k * 1.05, k * 0.38);
+  q.bezierCurveTo(k * 1.15, k * -0.2, k * 0.4, -k * 0.6, 0, -k);
+  return q;
+};
+const plate = (q: THREE.Shape, d: number) => new THREE.ExtrudeGeometry(q, { depth: d, bevelEnabled: false, curveSegments: 6 });
+
+// Real frames: each eye has a frame plate, a lens set in it and a glint, angled to wrap around the face;
+// a bridge joins them and the arms run back to the ears.
+function addGlasses(head: THREE.Group, g: (typeof GLASSES)[number]) {
+  if (g.id === 'none') return;
+  for (const sx of [-1, 1]) {
+    const eye = new THREE.Group();
+    eye.position.set(sx * 0.158, -0.012, 0.372);
+    eye.rotation.y = sx * 0.26;
+    if (g.id === 'shades') {
+      eye.add(tiny(mesh(plate(rounded(0.215, 0.158, 0.05), 0.016), g.color)));
+      eye.add(tiny(mesh(plate(rounded(0.18, 0.124, 0.038), 0.006), '#2c3350', 0, 0, 0.016)));
+      eye.add(tiny(mesh(new THREE.BoxGeometry(0.075, 0.016, 0.004).rotateZ(0.7), '#aebbe0', -0.035, 0.024, 0.024)));
+      eye.add(tiny(mesh(new THREE.BoxGeometry(0.03, 0.012, 0.004).rotateZ(0.7), '#aebbe0', 0.008, -0.006, 0.024)));
+    } else if (g.id === 'hearts') {
+      eye.add(tiny(mesh(plate(heartShape(0.082), 0.016), g.color)));
+      eye.add(tiny(mesh(plate(heartShape(0.062), 0.006), '#ff9dbb', 0, 0, 0.016)));
+      eye.add(tiny(mesh(new THREE.BoxGeometry(0.04, 0.014, 0.004).rotateZ(0.6), '#ffe6ef', -0.035, 0.035, 0.024)));
+    } else { // round: a thin metal ring, her eyes stay visible through it
+      eye.add(tiny(mesh(new THREE.TorusGeometry(0.094, 0.011, 6, 20), g.color)));
+      eye.add(tiny(mesh(new THREE.BoxGeometry(0.03, 0.008, 0.004).rotateZ(0.7), '#ffffff', -0.05, 0.05, 0.012)));
+    }
+    head.add(eye);
+    // Arm, from the outer corner of the frame back into the hair.
+    const arm = mesh(new THREE.BoxGeometry(0.014, 0.018, 0.36), g.color, sx * 0.325, 0.012, 0.19);
+    arm.rotation.y = sx * -0.62;
+    head.add(tiny(arm));
+  }
+  head.add(tiny(mesh(new THREE.BoxGeometry(0.1, 0.015, 0.014), g.color, 0, 0.018, 0.4)));
+}
+
 // Everything that changes with the outfit, rebuilt whole when she gets dressed.
 function buildBody(o: Outfit) {
   const top = TOPS.find(t => t.id === o.top)!, bottom = BOTTOMS.find(b => b.id === o.bottom)!;
@@ -98,35 +146,31 @@ function buildBody(o: Outfit) {
   head.position.y = 1.62;
   head.add(mesh(new THREE.IcosahedronGeometry(0.4, 1), '#f2c9a0'));
   head.add(mesh(new THREE.IcosahedronGeometry(0.43, 1).scale(1, 0.92, 0.95), '#5a3a28', 0, 0.06, -0.07));
-  head.add(mesh(new THREE.IcosahedronGeometry(0.2, 0).scale(1.3, 0.5, 0.6), '#5a3a28', 0, 0.26, 0.24)); // bangs
+  // Cap over the crown, so no skin shows between the hair and the fringe.
+  head.add(mesh(new THREE.IcosahedronGeometry(0.425, 2).scale(1.02, 0.72, 0.98), '#5a3a28', 0, 0.13, -0.015));
+  // Soft fringe across the forehead, parted a little to one side.
+  for (const [x, y, z, r, rz] of [[-0.2, 0.17, 0.31, 0.13, 0.55], [-0.05, 0.2, 0.345, 0.14, 0.2], [0.12, 0.2, 0.335, 0.13, -0.2], [0.26, 0.13, 0.28, 0.1, -0.7]]) {
+    const lock = mesh(new THREE.IcosahedronGeometry(r, 1).scale(1.25, 0.62, 0.55), '#5a3a28', x, y, z);
+    lock.rotation.set(-0.3, 0, rz);
+    head.add(lock);
+  }
   // Under a hat the bun drops to the nape, so it never pokes through the crown.
   const bunY = o.hat === 'none' ? 0.38 : 0.02, bunZ = o.hat === 'none' ? -0.3 : -0.42;
   const bun = mesh(new THREE.IcosahedronGeometry(0.17, 0), '#5a3a28', 0, bunY, bunZ);
   head.add(bun);
   head.add(mesh(new THREE.TorusGeometry(0.1, 0.03, 4, 8), '#e58fa8', 0, bunY - 0.02, bunZ + 0.08)); // hair tie
   for (const x of [-0.14, 0.14]) {
-    const tiny = [
+    const tinyParts = [
       mesh(new THREE.SphereGeometry(0.055, 6, 4).scale(0.8, 1.15, 0.4), '#23211d', x, -0.02, 0.37),
       mesh(new THREE.SphereGeometry(0.018, 4, 3), '#ffffff', x + 0.015, 0.02, 0.4),
       mesh(new THREE.SphereGeometry(0.05, 6, 3).scale(1, 0.55, 0.3), '#f0a0a8', x * 1.55, -0.12, 0.33),
     ];
-    for (const t of tiny) { t.castShadow = false; t.userData.noOutline = true; head.add(t); }
+    for (const t of tinyParts) { t.castShadow = false; t.userData.noOutline = true; head.add(t); }
   }
+  // A small smile, under the eyes.
+  head.add(tiny(mesh(new THREE.TorusGeometry(0.05, 0.011, 4, 10, Math.PI * 0.8).rotateZ(Math.PI * 1.1), '#a8524a', 0, -0.135, 0.365)));
   // Glasses and hats sit on the head group, so they follow its tilt.
-  const glassesOf = GLASSES.find(g => g.id === o.glasses)!;
-  if (glassesOf.id !== 'none') {
-    const c = glassesOf.color;
-    for (const x of [-0.14, 0.14]) {
-      if (glassesOf.id === 'shades') head.add(tiny(mesh(new THREE.SphereGeometry(0.095, 10, 6).scale(1.08, 0.82, 0.22), c, x, -0.01, 0.375)));
-      if (glassesOf.id === 'round') head.add(tiny(mesh(new THREE.TorusGeometry(0.09, 0.012, 5, 14), c, x, -0.01, 0.385)));
-      if (glassesOf.id === 'hearts') {
-        for (const sx of [-1, 1]) head.add(tiny(mesh(new THREE.SphereGeometry(0.05, 8, 5).scale(1, 1, 0.25), c, x + sx * 0.04, 0.012, 0.385)));
-        head.add(tiny(mesh(new THREE.ConeGeometry(0.09, 0.09, 4).rotateZ(Math.PI).scale(1, 1, 0.15), c, x, -0.05, 0.385)));
-      }
-      head.add(tiny(mesh(new THREE.BoxGeometry(0.012, 0.012, 0.3), c, x * 2.75, 0.01, 0.23)));
-    }
-    head.add(tiny(mesh(new THREE.BoxGeometry(0.1, 0.014, 0.014), c, 0, 0.01, 0.39)));
-  }
+  addGlasses(head, GLASSES.find(g => g.id === o.glasses)!);
   const hatOf = HATS.find(h => h.id === o.hat)!;
   if (hatOf.id === 'straw') {
     head.add(mesh(new THREE.CylinderGeometry(0.62, 0.66, 0.04, 14), hatOf.color, 0, 0.27, -0.03));
@@ -151,11 +195,11 @@ function buildBody(o: Outfit) {
   const scarf: THREE.Object3D[] = [];
   if (scarfOf.colors.length) {
     const [c0, c1] = scarfOf.colors;
-    body.add(mesh(new THREE.TorusGeometry(0.22, 0.07, 5, 10).rotateX(Math.PI / 2), c0, 0, 1.36, 0));
+    body.add(mesh(new THREE.TorusGeometry(0.235, 0.065, 5, 12).rotateX(Math.PI / 2), c0, 0, 1.25, 0)); // sits under the chin, clear of the face
     let parent: THREE.Object3D = body;
     for (let i = 0; i < 4; i++) {
       const seg = new THREE.Group();
-      seg.position.set(i === 0 ? 0.1 : 0, i === 0 ? 1.34 : 0, i === 0 ? -0.2 : -0.18);
+      seg.position.set(i === 0 ? 0.1 : 0, i === 0 ? 1.23 : 0, i === 0 ? -0.2 : -0.18);
       seg.add(mesh(new THREE.BoxGeometry(0.15 - i * 0.015, 0.05, 0.2).translate(0, 0, -0.09), i % 2 ? c1 : c0));
       parent.add(seg);
       scarf.push(seg);

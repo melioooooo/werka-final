@@ -25,13 +25,20 @@ Branche `v5`, partie de `v4`. Spec : `docs/v5-spec.md`. Plan : `docs/v5-plan.md`
 - **Lumière** : soleil, ciel et contre-jour suivent la table. Étoiles reflétées sur l'eau. Les ombres ne sautent plus au crépuscule.
 - **Étagère** : passée à 8 × 3 (24 places pour 33 objets possibles, les plus rares d'abord).
 
+## Retours après la première preview
+- **3D, blocages sur le relief** : la règle de pente (`steep`) faisait des murs invisibles le long des terrasses, surtout en montagne, et bloquait aussi en descente. Le relief n'arrête plus jamais Werka (`walkBlocked`), elle fait un petit saut sur chaque corniche. Arbres, rochers et eau bloquent toujours. La génération n'a pas changé : fleurs et arbres d'une date restent les mêmes.
+- **Armoire refaite** : un onglet par catégorie, des tuiles avec un dessin de chaque vêtement, et une caméra qui s'approche de ce qu'on choisit (visage pour les lunettes, tête pour les chapeaux).
+- **Lunettes** : vraies montures avec verre, reflet, pont et branches, courbées autour du visage.
+- **Visage de Werka** : frange, petit sourire, plus de peau visible dans les cheveux. L'écharpe passe sous le menton au lieu de traverser le visage.
+- **Coquillages** : 6 à 9 par jour sur les rives dans les deux versions (environ 7,5 en moyenne, contre 3 en 3D). Le total passe de 9-13 à 13-19 objets par jour. La poche passe de 16 à 24 places.
+
 ## Mise en ligne
 - `npm run build` à la racine produit tout le site dans `dist/`. `vercel.json` le configure.
 - `api/bouquet.js` : route serverless pour l'image pixel art, qui n'existait qu'en local.
 
 ## Vérification
 - 2D : `npm run typecheck`, `npm run build`, et le nouveau `npm run check` : 150 dates, aucune fleur coupée par le relief, rampes praticables, mêmes objets et fleurs connus des deux mondes, saisons par mois, jour sans saut de lumière.
-- 3D : `npm run build` et `npm run check` passent (avec un contrôle des fossiles près des rochers).
+- 3D : `npm run build` et `npm run check` passent (avec un contrôle des fossiles près des rochers et du relief qui ne bloque jamais). Traversée d'une vraie corniche de 1,7 de haut en jeu.
 - En headless, un Chrome à la fois : captures par heure et par saison (ordinateur), téléphone portrait et paysage pour le HUD, l'armoire et le bouton de saut, ramassage dans les deux mondes, armoire et rechargement, presets Low et High.
 - Sur le site compilé : migration des anciennes sauvegardes, saut dans les deux sens, panier, poche, kisses et galerie conservés.
 

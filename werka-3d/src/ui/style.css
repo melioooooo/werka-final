@@ -235,33 +235,32 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
   .gallery { max-height: calc(100vh - 28px); }
 }
 
-/* Wardrobe: panel on the right, Werka stays visible beside it (under it on portrait). */
-.wardrobe { position: fixed; inset: 0; display: flex; justify-content: flex-end; align-items: stretch; padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) 12px; pointer-events: none; }
-.wardrobe .card { pointer-events: auto; width: min(420px, 48vw); background: var(--cream); color: var(--ink); border-radius: 22px; padding: 16px 18px; overflow-y: auto; box-shadow: 0 16px 44px rgba(0, 0, 0, 0.35); display: flex; flex-direction: column; gap: 10px; animation: rise 0.18s ease-out; }
-.wardrobe h2 { font-family: var(--display); font-weight: 400; margin: 0; font-size: 26px; }
-.wardrobe .wslot { min-width: 0; }
-.wardrobe .lbl { display: block; font-weight: 800; font-size: 13px; margin-bottom: 5px; color: #3d5358; }
-.wardrobe .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.wardrobe .chip { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 4px 11px; border-radius: 999px; background: #fff; font-size: 13.5px; font-weight: 700; color: var(--ink); box-shadow: inset 0 0 0 1.5px rgba(19, 38, 43, 0.18); }
-.wardrobe .chip i { width: 14px; height: 14px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(19, 38, 43, 0.25); flex: none; }
-.wardrobe .chip[aria-pressed='true'] { background: var(--ink); color: var(--cream); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25); }
-.wardrobe .done { margin-top: auto; align-self: flex-end; flex: none; }
+/* Wardrobe: a tab per slot and a grid of drawn tiles, Werka stays visible beside it (above it on portrait). */
+.wardrobe { position: fixed; inset: 0; display: flex; justify-content: flex-end; align-items: center; padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) 12px; pointer-events: none; }
+.wardrobe .card { pointer-events: auto; width: min(400px, 46vw); max-height: 100%; background: var(--cream); color: var(--ink); border-radius: 22px; padding: 12px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 16px 44px rgba(0, 0, 0, 0.35); animation: rise 0.18s ease-out; }
+.wtabs { display: flex; gap: 2px; padding: 3px; border-radius: 14px; background: var(--cream-2); flex: none; }
+.wtabs button { flex: 1; min-width: 0; min-height: 40px; padding: 0 2px; border-radius: 11px; background: none; font-weight: 800; font-size: 13px; color: #3d5358; }
+.wtabs button[aria-selected='true'] { background: var(--ink); color: var(--cream); }
+.wgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; overflow-y: auto; min-height: 0; padding: 2px; }
+.wtile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 92px; padding: 8px 4px 7px; border-radius: 14px; background: #fff; color: var(--ink); font-size: 12.5px; font-weight: 700; line-height: 1.15; text-align: center; box-shadow: inset 0 0 0 1.5px rgba(19, 38, 43, 0.14); transition: transform 0.12s ease; }
+.wtile:hover { transform: translateY(-1px); box-shadow: inset 0 0 0 1.5px rgba(19, 38, 43, 0.4); }
+.wtile svg { width: 46px; height: 46px; flex: none; }
+.wtile[aria-pressed='true'] { background: #fdeef2; box-shadow: inset 0 0 0 2.5px var(--petal-d); }
+.wardrobe .done { align-self: stretch; flex: none; }
 @media (orientation: portrait) {
   .wardrobe { align-items: flex-end; }
-  .wardrobe .card { width: 100%; max-height: 56vh; }
-  .wardrobe .chips { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 3px; }
-  .wardrobe .chip { flex: none; }
+  .wardrobe .card { width: 100%; max-height: 42vh; }
+  .wgrid { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); }
+  .wtile { min-height: 80px; }
+  .wtile svg { width: 38px; height: 38px; }
 }
 @media (max-height: 500px) {
-  .wardrobe .card { width: 56vw; padding: 8px 12px; gap: 4px; }
-  .wardrobe h2 { display: none; }
-  .wardrobe .wslot { display: flex; align-items: center; gap: 8px; }
-  .wardrobe .lbl { flex: none; width: 52px; margin: 0; font-size: 12px; }
-  .wardrobe .chips { flex: 1; min-width: 0; }
-  .wardrobe .done { min-height: 40px; padding-block: 4px; }
-  .wardrobe .chips { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 3px; }
-  .wardrobe .chip { flex: none; min-height: 36px; }
+  .wardrobe .card { width: 52vw; padding: 8px; gap: 6px; }
+  .wtabs button { min-height: 36px; font-size: 12px; }
+  .wgrid { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; }
+  .wtile { min-height: 70px; padding: 4px; font-size: 11.5px; }
+  .wtile svg { width: 32px; height: 32px; }
+  .wardrobe .done { min-height: 38px; padding-block: 2px; }
 }
-
 .jump { position: fixed; top: max(14px, env(safe-area-inset-top)); right: calc(max(14px, env(safe-area-inset-right)) + 56px); min-width: 44px; height: 44px; padding: 0 10px; border-radius: 999px; background: var(--ink-a); color: var(--cream); font-weight: 800; font-size: 15px; backdrop-filter: blur(8px); box-shadow: inset 0 0 0 1.5px rgba(241, 199, 107, 0.5); }
 .jump:hover { background: #1d3940; }

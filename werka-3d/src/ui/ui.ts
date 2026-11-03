@@ -3,6 +3,7 @@ import './style.css';
 import { MAX_INVENTORY, MAX_BOUQUET_SIZE, MAX_POCKET, MAX_EXTRAS, POCKET_INFO } from '../world/data.ts';
 import type { Item, Bouquet } from '../state.ts';
 import { OUTFIT_SLOTS, cleanOutfit, type Outfit } from '../world/outfits.ts';
+import { wardrobeIcon } from './wardrobe-icons.ts';
 
 const root = document.getElementById('ui')!;
 const el = (html: string) => {
@@ -313,15 +314,21 @@ export function arrange(o: { onShuffle: () => void; onBack: () => void; onDone: 
   };
 }
 
-export function wardrobe(outfit: Outfit, onChange: (o: Outfit) => void, onClose: () => void) {
-  let cur = cleanOutfit(outfit);
+export function wardrobe(outfit: Outfit, onChange: (o: Outfit) => void, onSlot: (k: keyof Outfit) => void, onClose: () => void) {
+  let cur = cleanOutfit(outfit), slot: keyof Outfit = 'top';
   const a = el(`<div class="wardrobe" role="dialog" aria-label="Werka's wardrobe"><div class="card">
-    <h2>Wardrobe</h2>
-    ${OUTFIT_SLOTS.map(s => `<div class="wslot" role="group" aria-label="${s.label}"><span class="lbl">${s.label}</span><div class="chips">${(s.items as readonly { id: string; name: string; color?: string; colors?: string[] }[]).map(i => {
-      const c = i.color ?? i.colors?.[0];
-      return `<button class="chip" data-k="${s.key}" data-v="${i.id}" aria-pressed="${cur[s.key] === i.id}">${c ? `<i style="background:${c}"></i>` : ''}${i.name}</button>`;
-    }).join('')}</div></div>`).join('')}
+    <div class="wtabs" role="tablist">${OUTFIT_SLOTS.map(s => `<button role="tab" data-slot="${s.key}">${s.label}</button>`).join('')}</div>
+    <div class="wgrid"></div>
     <button class="btn petal done">Looks good</button></div></div>`);
+  const grid = $(a, '.wgrid');
+  const paint = () => {
+    a.querySelectorAll<HTMLElement>('[data-slot]').forEach(t => t.setAttribute('aria-selected', String(t.dataset.slot === slot)));
+    const s = OUTFIT_SLOTS.find(o => o.key === slot)!;
+    grid.setAttribute('aria-label', s.label);
+    grid.innerHTML = (s.items as readonly { id: string; name: string }[]).map(i =>
+      `<button class="wtile" data-v="${i.id}" aria-pressed="${cur[slot] === i.id}">${wardrobeIcon[slot](i)}<span>${i.name}</span></button>`).join('');
+  };
+  paint();
   const close = () => { removeEventListener('keydown', key); a.remove(); onClose(); };
   const key = (e: KeyboardEvent) => { if (e.code === 'Escape') close(); };
   addEventListener('keydown', key);
@@ -329,9 +336,9 @@ export function wardrobe(outfit: Outfit, onChange: (o: Outfit) => void, onClose:
     const b = (e.target as HTMLElement).closest<HTMLElement>('button');
     if (!b) return;
     if (b.classList.contains('done')) return close();
-    const k = b.dataset.k as keyof Outfit;
-    cur = { ...cur, [k]: b.dataset.v! };
-    a.querySelectorAll<HTMLElement>(`[data-k="${k}"]`).forEach(c => c.setAttribute('aria-pressed', String(c === b)));
+    if (b.dataset.slot) { slot = b.dataset.slot as keyof Outfit; paint(); onSlot(slot); return; }
+    cur = { ...cur, [slot]: b.dataset.v! };
+    grid.querySelectorAll<HTMLElement>('.wtile').forEach(c => c.setAttribute('aria-pressed', String(c === b)));
     onChange(cur);
   };
 }
