@@ -45,12 +45,33 @@ export const pondNorm = (p: Pond, x: number, y: number, pad = 0) => {
   return Math.sqrt(dx * dx + dy * dy);
 };
 
+// Relief (spec v5 §2): a plateau with a cliff along its south side and a ramp up. All on a 16px grid.
+// Cell kinds: 0 ground, 1 top of the plateau, 2 cliff face (solid), 3 ramp.
+export const RELIEF_CELL = 16;
+export const FACE_ROWS = 3;
+export interface Plateau { x: number; y: number; cols: number; rows: number; kind: Uint8Array } // kind covers rows + FACE_ROWS
+export const reliefCell = (p: Plateau, x: number, y: number) => {
+  const c = Math.floor((x - p.x) / RELIEF_CELL), r = Math.floor((y - p.y) / RELIEF_CELL);
+  return c < 0 || r < 0 || c >= p.cols || r >= p.rows + FACE_ROWS ? 0 : p.kind[r * p.cols + c];
+};
+// True if a step from (x0,y0) to (x1,y1) is not allowed: into a cliff face, or over an edge anywhere but the ramp.
+export const reliefBlocked = (list: Plateau[], x0: number, y0: number, x1: number, y1: number) => {
+  for (const p of list) {
+    const a = reliefCell(p, x0, y0), b = reliefCell(p, x1, y1);
+    if (a === b) continue;
+    if (b === 2) return true;
+    if ((a === 1 && b === 0) || (a === 0 && b === 1)) return true;
+  }
+  return false;
+};
+
 // Ambient animals. type: see CRITTER in utils/critters.ts. pond: home water (null = river or none).
 export interface CritterSpawn { type: number; x: number; y: number; flock: number; pond: Pond | null; v: number }
 
 export interface World {
   map: Biome[][];
   ponds: Pond[][][]; // [sy][sx]
+  relief: Plateau[][][]; // [sy][sx]
   critters: CritterSpawn[][][]; // [sy][sx]
   flowers: Flower[];
   obstacles: Obstacle[][][]; // [sy][sx]
@@ -136,9 +157,70 @@ export const makeWorld = (dateSeed: string): World => {
 
   const obstacles = map.map((row, sy) => row.map((biome, sx) => genObstacles(dateSeed, sx, sy, biome, riverY)));
   const ponds = genPonds(dateSeed, map, obstacles, flowers);
-  const { items, elio } = placeItems(dateSeed, map, obstacles, ponds, riverY, bridgeX);
-  const critters = genCritters(dateSeed, map, obstacles, ponds, riverY, bridgeX);
-  return { map, ponds, critters, flowers, obstacles, items, elio, riverY, bridgeX };
+  const relief = genRelief(dateSeed, map, obstacles, ponds, flowers, riverY);
+  const { items, elio } = placeItems(dateSeed, map, obstacles, ponds, relief, riverY, bridgeX);
+  const critters = genCritters(dateSeed, map, obstacles, ponds, relief, riverY, bridgeX);
+  return { map, ponds, relief, critters, flowers, obstacles, items, elio, riverY, bridgeX };
+};
+
+// Relief has its own stream and goes only where its cliffs and ramp touch nothing: flowers and trees never move.
+const RELIEF_BIOMES: Partial<Record<Biome, number>> = { [Biome.MOUNTAIN]: 2, [Biome.TUNDRA]: 2, [Biome.DESERT]: 2, [Biome.FOREST]: 1, [Biome.GRASS]: 1, [Biome.MEADOW]: 1, [Biome.ENCHANTED]: 1, [Biome.TROPICAL]: 1, [Biome.RIVER]: 1, [Biome.SWAMP]: 1 };
+const genRelief = (dateSeed: string, map: Biome[][], obstacles: Obstacle[][][], ponds: Pond[][][], flowers: Flower[], riverY: (gx: number) => number): Plateau[][][] => {
+  const rng = new SeededRandom(`${dateSeed}-relief`), C = RELIEF_CELL;
+  return map.map((row, sy) => row.map((biome, sx) => {
+    const out: Plateau[] = [];
+    const here = flowers.filter(f => f.screenX === sx && f.screenY === sy);
+    const want = RELIEF_BIOMES[biome] ?? 0;
+    for (let k = 0; k < want; k++) {
+      for (let tries = 0; tries < 80; tries++) {
+        // Starts large and settles for smaller as the tries run out, so crowded screens still get a hill.
+        const size = 1 - tries / 100;
+        const cols = 10 + Math.floor((6 + rng.next() * 10) * size), rows = 6 + Math.floor((2 + rng.next() * 6) * size);
+        const W = cols * C, H = (rows + FACE_ROWS) * C;
+        const x = 48 + Math.floor(rng.next() * ((CANVAS_WIDTH - W - 96) / C)) * C, y = 48 + Math.floor(rng.next() * ((CANVAS_HEIGHT - H - 112) / C)) * C;
+        if (x < 300 && y < 300) continue; // keep the desktop HUD corner flat
+        if (isHouseScreen(sx, sy) && x < HOUSE_RECT.x + HOUSE_RECT.width + 110 && x + W > HOUSE_RECT.x - 110 && y < SPAWN.y + 170) continue;
+        if (isHouseScreen(sx, sy) && x < CANVAS_WIDTH / 2 + 90 && x + W > CANVAS_WIDTH / 2 - 90) continue; // the path
+        if (biome === Biome.RIVER && [0, 0.5, 1].some(u => Math.abs(y + H * u - riverY(sx * CANVAS_WIDTH + x + W / 2)) < 110)) continue;
+        if (ponds[sy][sx].some(q => x < q.x + q.rx + 40 && x + W > q.x - q.rx - 40 && y < q.y + q.ry + 40 && y + H > q.y - q.ry - 40)) continue;
+        if (out.some(q => x < q.x + q.cols * C + 60 && x + W > q.x - 60 && y < q.y + (q.rows + FACE_ROWS) * C + 60 && y + H > q.y - 60)) continue;
+        // Irregular outline: top and bottom edges wander, with cut corners. The stretch by the ramp stays flat.
+        const kind = new Uint8Array(cols * (rows + FACE_ROWS));
+        const rc = 3 + Math.floor(rng.next() * Math.max(1, cols - 10));
+        const walk = () => { let v = 1; return Array.from({ length: cols }, () => (v = Math.max(0, Math.min(2, v + Math.floor(rng.next() * 3) - 1)))); };
+        const northOff = walk(), southOff = walk();
+        for (let c = 0; c < cols; c++) {
+          const corner = Math.max(0, 2 - Math.min(c, cols - 1 - c));
+          const south = c >= rc - 1 && c <= rc + 4 ? 0 : Math.max(corner, southOff[c]);
+          const b = rows - 1 - south;
+          for (let r = Math.max(corner, northOff[c]); r <= b; r++) kind[r * cols + c] = 1;
+          for (let r = b + 1; r <= b + FACE_ROWS; r++) kind[r * cols + c] = 2;
+        }
+        // Ramp: four columns up the flat stretch of the south edge.
+        for (let c = rc; c < rc + 4; c++) for (let r = rows; r < rows + FACE_ROWS; r++) kind[r * cols + c] = 3;
+        const p: Plateau = { x, y, cols, rows, kind };
+        // The edge ring, the cliff and the foot of the ramp must be clear.
+        const edge = (ex: number, ey: number) => {
+          const v = reliefCell(p, ex, ey);
+          if (v === 2 || v === 3) return true;
+          for (const [ax, ay] of [[C, 0], [-C, 0], [0, C], [0, -C]]) if (v !== reliefCell(p, ex + ax, ey + ay)) return true;
+          return false;
+        };
+        const footY = y + (rows + FACE_ROWS) * C, footX0 = x + rc * C, footX1 = footX0 + 4 * C;
+        // Also the landing at the top of the ramp, or trees could wall it off.
+        const landY = y + rows * C;
+        const clearAt = (ex: number, ey: number) => edge(ex, ey) || (ex > footX0 - 12 && ex < footX1 + 12 && ((ey > footY - 4 && ey < footY + 40) || (ey > landY - 48 && ey <= landY)));
+        let ok = true;
+        for (const o of obstacles[sy][sx]) {
+          for (let ox = o.x - 12; ox <= o.x + o.width + 12 && ok; ox += 8) for (let oy = o.y - 12; oy <= o.y + o.height + 12 && ok; oy += 8) if (clearAt(ox, oy)) ok = false;
+          if (!ok) break;
+        }
+        if (ok && here.some(f => [2, 3].includes(reliefCell(p, f.x, f.y)))) ok = false;
+        if (ok) { out.push(p); break; }
+      }
+    }
+    return out;
+  }));
 };
 
 // Ponds get their own stream and only go where nothing already stands, so trees, rocks and flowers never move.
@@ -169,7 +251,7 @@ const genPonds = (dateSeed: string, map: Biome[][], obstacles: Obstacle[][][], f
 
 // Critters: deterministic per date from `${seed}-critters`; at most CRITTER_CAP per screen (only one screen runs at a time).
 export const CRITTER_CAP = 40;
-const genCritters = (dateSeed: string, map: Biome[][], obstacles: Obstacle[][][], ponds: Pond[][][], riverY: (gx: number) => number, bridgeX: (sx: number, sy: number) => number) => {
+const genCritters = (dateSeed: string, map: Biome[][], obstacles: Obstacle[][][], ponds: Pond[][][], relief: Plateau[][][], riverY: (gx: number) => number, bridgeX: (sx: number, sy: number) => number) => {
   const rng = new SeededRandom(`${dateSeed}-critters`);
   return map.map((row, sy) => row.map((biome, sx) => {
     const out: CritterSpawn[] = [];
@@ -178,7 +260,8 @@ const genCritters = (dateSeed: string, map: Biome[][], obstacles: Obstacle[][][]
     const gx = (x: number) => sx * CANVAS_WIDTH + x;
     const dry = (x: number, y: number) =>
       !obstacles[sy][sx].some(o => x > o.x - 14 && x < o.x + o.width + 14 && y > o.y - 14 && y < o.y + o.height + 14) &&
-      !ps.some(p => pondNorm(p, x, y, 16) < 1) && !(river && Math.abs(y - riverY(gx(x))) < 52);
+      !ps.some(p => pondNorm(p, x, y, 16) < 1) && !(river && Math.abs(y - riverY(gx(x))) < 52) &&
+      !relief[sy][sx].some(p => reliefCell(p, x, y) >= 2);
     const open = (margin: number) => {
       for (let t = 0; t < 30; t++) {
         const x = rng.range(margin, CANVAS_WIDTH - margin), y = rng.range(margin + 30, CANVAS_HEIGHT - margin);
@@ -294,16 +377,15 @@ const genObstacles = (dateSeed: string, sx: number, sy: number, biome: Biome, ri
   return out;
 };
 
-// Trinkets, kisses and Elio get their own RNG stream and are only placed on cells reachable from the spawn.
+// Walkable 16px grid over all screens, flood-filled from the spawn. Mirrors the player's collision, a bit stricter.
 const CELL = 16;
-const placeItems = (dateSeed: string, map: Biome[][], obstacles: Obstacle[][][], ponds: Pond[][][], riverY: (gx: number) => number, bridgeX: (sx: number, sy: number) => number) => {
+export const computeReach = (map: Biome[][], obstacles: Obstacle[][][], ponds: Pond[][][], relief: Plateau[][][], riverY: (gx: number) => number, bridgeX: (sx: number, sy: number) => number) => {
   const GW = (CANVAS_WIDTH * 3) / CELL, GH = (CANVAS_HEIGHT * 3) / CELL;
   const local = (c: number, r: number) => {
     const gx = c * CELL + CELL / 2, gy = r * CELL + CELL / 2;
     const sx = Math.floor(gx / CANVAS_WIDTH), sy = Math.floor(gy / CANVAS_HEIGHT);
     return { gx, gy, sx, sy, x: gx - sx * CANVAS_WIDTH, y: gy - sy * CANVAS_HEIGHT };
   };
-  // Mirrors the player's collision (obstacle boxes + 8px, river unless on the bridge), a bit stricter.
   const passable = (sx: number, sy: number, x: number, y: number, gx: number) => {
     for (const o of obstacles[sy][sx]) if (x > o.x - 10 && x < o.x + o.width + 10 && y > o.y - 10 && y < o.y + o.height + 10) return false;
     if (map[sy][sx] === Biome.RIVER && riverDepth(y - riverY(gx)) > -3 && Math.abs(x - bridgeX(sx, sy)) >= BRIDGE_WIDTH / 2 - 14) return false;
@@ -317,16 +399,24 @@ const placeItems = (dateSeed: string, map: Biome[][], obstacles: Obstacle[][][],
   while (queue.length) {
     const i = queue.pop()!;
     const c = i % GW, r = (i - c) / GW;
+    const from = local(c, r);
     for (const [nc, nr] of [[c + 1, r], [c - 1, r], [c, r + 1], [c, r - 1]]) {
       if (nc < 0 || nr < 0 || nc >= GW || nr >= GH) continue;
       const j = nr * GW + nc;
       if (reach[j]) continue;
       const p = local(nc, nr);
       if (!passable(p.sx, p.sy, p.x, p.y, p.gx)) continue;
+      if (p.sx === from.sx && p.sy === from.sy && reliefBlocked(relief[p.sy][p.sx], from.x, from.y + FEET, p.x, p.y + FEET)) continue;
       reach[j] = 1;
       queue.push(j);
     }
   }
+  return { reach, GW, GH, local };
+};
+
+// Trinkets, kisses and Elio get their own RNG stream and are only placed on cells reachable from the spawn.
+const placeItems = (dateSeed: string, map: Biome[][], obstacles: Obstacle[][][], ponds: Pond[][][], relief: Plateau[][][], riverY: (gx: number) => number, bridgeX: (sx: number, sy: number) => number) => {
+  const { reach, GW, GH, local } = computeReach(map, obstacles, ponds, relief, riverY, bridgeX);
 
   // A good spot: reachable with some room around it, off the screen edges, on dry land, clear of the house and door.
   type Spot = { sx: number; sy: number; x: number; y: number; gx: number; gy: number; nearCover: boolean };
@@ -338,6 +428,7 @@ const placeItems = (dateSeed: string, map: Biome[][], obstacles: Obstacle[][][],
       if (!reach[r * GW + c]) continue;
       const p = local(c, r);
       if (p.x < 40 || p.x > CANVAS_WIDTH - 40 || p.y < 40 || p.y > CANVAS_HEIGHT - 40) continue;
+      if (relief[p.sy][p.sx].some(q => reliefCell(q, p.x, p.y) >= 2 || reliefCell(q, p.x, p.y + 16) >= 2)) continue; // never on a cliff or ramp
       if (!reach[r * GW + c + 1] || !reach[r * GW + c - 1] || !reach[(r + 1) * GW + c] || !reach[(r - 1) * GW + c]) continue;
       const rd = map[p.sy][p.sx] === Biome.RIVER ? Math.abs(p.y - riverY(p.gx)) : Infinity;
       if (rd < 50) continue;

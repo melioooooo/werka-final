@@ -3,11 +3,11 @@ import { Player, Flower, Biome, Obstacle, WorldItem } from '../types';
 import { InventoryHUD } from './InventoryHUD';
 import { MobileControls, useIsTouch, useIsLandscape } from './MobileControls';
 import { SoundManager } from '../utils/SoundManager';
-import { makeWorld, SeededRandom, SPAWN, isHouseScreen, pondNorm, FEET, riverDepth, onBridge } from '../utils/world';
+import { makeWorld, SeededRandom, SPAWN, isHouseScreen, pondNorm, FEET, riverDepth, onBridge, reliefBlocked } from '../utils/world';
 import { skyAt } from '../shared/sky';
 import { jumpTo } from '../shared/jump';
 import { loadCritters, updateCritters, setCritterFlowers, setCritterView, drawCrittersWater, addGroundCritters, drawGroundCritter, drawCrittersAir, drawFireflies, nightOf, critterDebug } from '../utils/critters';
-import { drawBackground, seasonGround, drawSeasonFx, sprite, drawHouse, drawTree, drawRock, drawFlower, drawItem, drawElio, drawElioPeek, elioHide, drawBang, drawHeart, elioPortrait } from '../utils/draw';
+import { drawBackground, drawRelief, seasonGround, drawSeasonFx, sprite, drawHouse, drawTree, drawRock, drawFlower, drawItem, drawElio, drawElioPeek, elioHide, drawBang, drawHeart, elioPortrait } from '../utils/draw';
 import { newCamera, makeScene, blitCamera } from '../utils/camera';
 import {
   CANVAS_WIDTH,
@@ -503,6 +503,9 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
         }
       }
 
+      // Relief: no walking through cliffs or over an edge, only up and down the ramp
+      if (!screenChanged && !blocked && reliefBlocked(world.relief[nsy][nsx], x, y + FEET, nextX, nextY + FEET)) blocked = true;
+
       // Ponds: same rule as the river, never walk in, always allowed to walk out
       if (!screenChanged && !blocked) {
         for (const p of world.ponds[nsy][nsx]) {
@@ -698,6 +701,7 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
     const { x, y } = currentScreen;
     drawBackground(bgCtx, world.map[y]?.[x] || Biome.GRASS, dateSeed, x, y, isHouseScreen(x, y), world.riverY, world.bridgeX,
       world.flowers.filter(f => f.screenX === x && f.screenY === y), world.ponds[y][x]);
+    drawRelief(bgCtx, world.relief[y][x], world.map[y]?.[x] || Biome.GRASS, dateSeed, x, y);
     seasonGround(bgCtx, world.map[y]?.[x] || Biome.GRASS, dateSeed, x, y);
     // Stars mirrored on the water at night: fixed points for this screen, twinkled in drawDayNightCycle.
     const rng = new SeededRandom(`${dateSeed}-${x}-${y}-stars`), pts: number[] = [];

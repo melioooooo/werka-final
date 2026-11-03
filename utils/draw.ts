@@ -1,10 +1,79 @@
 import { Flower, FlowerType, Biome, Obstacle } from '../types';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, HOUSE_RECT, BIOME_COLORS, rarityOf } from '../constants';
-import { SeededRandom, BRIDGE_WIDTH, Pond, pondNorm } from './world';
+import { SeededRandom, BRIDGE_WIDTH, Pond, pondNorm, Plateau, RELIEF_CELL, FACE_ROWS } from './world';
 import { skyAt } from '../shared/sky';
 import { currentSeason } from '../shared/season';
 
 export const SEASON = currentSeason();
+
+// --- Relief (spec v5 §2) ---
+const CLIFF: Partial<Record<Biome, [string, string, string]>> = {
+  [Biome.MOUNTAIN]: ['#78716c', '#57534e', '#a8a29e'], [Biome.DESERT]: ['#c98a4a', '#9a6432', '#e3ae6e'], [Biome.TUNDRA]: ['#8a9aa8', '#64748b', '#cbd5e1'],
+  [Biome.FOREST]: ['#6b4f34', '#4a3522', '#8a6b4a'], [Biome.ENCHANTED]: ['#5b4a7a', '#3f3358', '#8270a8'],
+};
+// Baked into the ground layer, so sprites sort above it with no extra work: light top, strata on the cliff, stone steps on the ramp.
+export const drawRelief = (ctx: CanvasRenderingContext2D, list: Plateau[], biome: Biome, dateSeed: string, sx: number, sy: number) => {
+  const C = RELIEF_CELL, [base, dark, light] = CLIFF[biome] ?? ['#7c5f3f', '#5a4329', '#a1835c'];
+  list.forEach((p, n) => {
+    const rng = new SeededRandom(`${dateSeed}-${sx}-${sy}-${n}-cliff`);
+    const at = (c: number, r: number) => (c < 0 || r < 0 || c >= p.cols || r >= p.rows + FACE_ROWS ? 0 : p.kind[r * p.cols + c]);
+    // Shadows on the ground first: under the cliffs and off to the east side.
+    for (let r = 0; r < p.rows + FACE_ROWS; r++) for (let c = 0; c < p.cols; c++) {
+      const k = at(c, r), x = p.x + c * C, y = p.y + r * C;
+      if (k === 0) continue;
+      if (at(c + 1, r) === 0) { ctx.fillStyle = 'rgba(20,15,10,0.2)'; ctx.fillRect(x + C, y + 4, 12, C); }
+      if (k === 2 && at(c, r + 1) === 0) {
+        ctx.fillStyle = 'rgba(20,15,10,0.32)'; ctx.fillRect(x, y + C, C + 4, 8);
+        ctx.fillStyle = 'rgba(20,15,10,0.16)'; ctx.fillRect(x, y + C + 8, C + 8, 8);
+      }
+    }
+    for (let r = 0; r < p.rows + FACE_ROWS; r++) for (let c = 0; c < p.cols; c++) {
+      const k = at(c, r), x = p.x + c * C, y = p.y + r * C;
+      if (k === 1) {
+        ctx.fillStyle = 'rgba(255,250,205,0.15)';
+        ctx.fillRect(x, y, C, C);
+        if (at(c, r - 1) === 0) { ctx.fillStyle = 'rgba(255,255,230,0.4)'; ctx.fillRect(x, y, C, 4); ctx.fillStyle = 'rgba(255,255,230,0.16)'; ctx.fillRect(x, y + 4, C, 4); }
+        if (at(c - 1, r) === 0) { ctx.fillStyle = 'rgba(255,255,230,0.26)'; ctx.fillRect(x, y, 4, C); }
+        if (at(c + 1, r) === 0) { ctx.fillStyle = 'rgba(30,22,14,0.42)'; ctx.fillRect(x + C - 4, y, 4, C); }
+      } else if (k === 2) {
+        // Rock: 8px blocks in staggered courses, lit along the top, darker toward the foot of the cliff.
+        let depth = 0;
+        while (at(c, r - depth - 1) === 2) depth++;
+        for (let py = 0; py < C; py += 8) {
+          const stagger = (Math.floor((y + py) / 8) % 2) * 4;
+          for (let px = -stagger; px < C; px += 8) {
+            const n = rng.next();
+            ctx.fillStyle = n < 0.22 ? dark : n > 0.8 ? light : base;
+            const bx = Math.max(x, x + px), bw = Math.min(x + C, x + px + 8) - bx;
+            ctx.fillRect(bx, y + py, bw, 8);
+            ctx.fillStyle = 'rgba(255,255,255,0.14)'; ctx.fillRect(bx, y + py, bw, 2);
+            ctx.fillStyle = 'rgba(0,0,0,0.26)'; ctx.fillRect(bx, y + py + 6, bw, 2);
+          }
+        }
+        ctx.fillStyle = `rgba(15,10,8,${0.1 + depth * 0.14})`;
+        ctx.fillRect(x, y, C, C);
+        if (depth === 0) { // grass lip hanging over the edge
+          ctx.fillStyle = '#4a8a3f';
+          ctx.fillRect(x, y, C, 4);
+          ctx.fillStyle = '#3a7233';
+          ctx.fillRect(x, y + 4, C, 2);
+          ctx.fillRect(x + Math.floor(rng.next() * 3) * 4, y + 6, 4, 4);
+          if (rng.next() < 0.5) ctx.fillRect(x + 8 + Math.floor(rng.next() * 2) * 4, y + 6, 4, 6);
+        }
+        if (at(c + 1, r) !== 2 && at(c + 1, r) !== 3) { ctx.fillStyle = 'rgba(15,10,8,0.4)'; ctx.fillRect(x + C - 4, y, 4, C); }
+        if (at(c - 1, r) !== 2 && at(c - 1, r) !== 3) { ctx.fillStyle = 'rgba(255,255,255,0.16)'; ctx.fillRect(x, y, 4, C); }
+      } else if (k === 3) {
+        // Stone steps, each with a lit tread and a dark riser.
+        for (let py = 0; py < C; py += 8) {
+          ctx.fillStyle = light; ctx.fillRect(x, y + py, C, 5);
+          ctx.fillStyle = dark; ctx.fillRect(x, y + py + 5, C, 3);
+        }
+        if (at(c - 1, r) === 2) { ctx.fillStyle = dark; ctx.fillRect(x, y, 6, C); }
+        if (at(c + 1, r) === 2) { ctx.fillStyle = dark; ctx.fillRect(x + C - 6, y, 6, C); }
+      }
+    }
+  });
+};
 
 // --- Seasons (spec v5 §4) ---
 // Recolour the baked ground once per screen. Only green pixels change: water, sand, paths and bridges stay.

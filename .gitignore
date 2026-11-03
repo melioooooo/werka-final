@@ -25,3 +25,4 @@ dist-ssr
 *.sln
 *.sw?
 IMG_0522.JPEG
+scripts/.check-bundle.mjs
