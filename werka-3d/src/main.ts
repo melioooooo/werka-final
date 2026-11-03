@@ -19,6 +19,8 @@ import { U } from './render/toon.ts';
 import { initInput, readMove, consumeAction, running, input } from './input/input.ts';
 import { startAudio, ambience, sfx, isMuted, toggleMute } from './audio.ts';
 import * as ui from './ui/ui.ts';
+import { jumpTo, readJump } from '../../shared/jump.ts';
+import { resetAll } from '../../shared/save.ts';
 
 type Mode = 'menu' | 'intro' | 'outdoor' | 'talk' | 'house' | 'craft' | 'arrange' | 'gallery' | 'wardrobe';
 
@@ -85,6 +87,7 @@ applyQuality(quality);
 const QUALITY_LABEL: Record<Quality, string> = { low: 'Low', med: 'Medium', high: 'High' };
 initInput(canvas, ui.stick, ui.knob, ui.actBtn);
 ui.initMute(isMuted(), toggleMute);
+ui.initJump(() => { if (!busy) jumpTo('2d', dayT); });
 
 let busy = false; // true during fades so input can't double-trigger
 let dayT = START_TIME, day = 1, golden = 0;
@@ -140,8 +143,9 @@ function goMenu() {
       });
     },
     onGallery: () => { startAudio(); openGallery('menu'); },
+    onJump: () => jumpTo('2d', START_TIME),
     onReset: () => {
-      for (const k of Object.keys(localStorage)) if (k.startsWith('werka3d_')) localStorage.removeItem(k);
+      resetAll(today());
       location.reload();
     },
   });
@@ -508,7 +512,16 @@ renderer.setAnimationLoop(now => {
   }
 });
 
-goMenu();
+const arrived = readJump();
+if (arrived === null) goMenu();
+else {
+  // Straight back into the walk, at the same time of day. Audio has to wait for a gesture.
+  dayT = arrived;
+  probe = -1;
+  addEventListener('pointerdown', startAudio, { once: true });
+  addEventListener('keydown', startAudio, { once: true });
+  enterOutdoor(SPAWN.x, SPAWN.z, true);
+}
 
 // Test hook for headless browser checks (teleport, read state). Dev server only.
 if (import.meta.env.DEV) {

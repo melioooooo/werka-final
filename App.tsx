@@ -5,32 +5,28 @@ import { Gallery } from './components/Gallery';
 import { HouseInterior } from './components/HouseInterior';
 import { GameState, Flower, Bouquet, FlowerType, BouquetLayout } from './types';
 import { bouquetSvgUrl, generateBouquetImage } from './utils/bouquetArt';
+import { FLOWER_COLORS } from './constants';
+import { loadShared, patchShared, resetAll } from './shared/save';
+import { jumpTo, readJump } from './shared/jump';
 
 const SAVE_KEY = 'werka-bouquet-save-v1';
 const getToday = () => new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 const store = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch (e) { console.error('Storage full', e); } };
 
 // Read saved state once, before first render, so the save effects can never overwrite it with empty defaults.
+// Basket, pocket, kisses and bouquets are shared with the 3D world; picked flowers stay per world.
+const JUMP = readJump();
 const loadSaved = () => {
   const today = getToday();
-  const parse = <T,>(k: string, fallback: T): T => {
-    try { return JSON.parse(localStorage.getItem(k) || 'null') ?? fallback; } catch { return fallback; }
-  };
-  let inventory = parse<Flower[]>('werka_inventory', []);
-  let pocket = parse<string[]>('werka_pocket', []);
-  const last = localStorage.getItem('werka_last_date');
-  if (last && last !== today) {
-    console.log("New day detected, resetting inventory.");
-    inventory = [];
-    pocket = [];
-    localStorage.removeItem(SAVE_KEY);
-  }
-  if (!Array.isArray(pocket)) pocket = [];
-  const kisses = Number(localStorage.getItem('werka_kisses_total')) || 0;
-  const elioDay = localStorage.getItem('werka_elio_day');
-  const bouquets = parse<Bouquet[]>('werka_bouquets', []).map(b => (b.imageUrl?.startsWith('data:image/png') ? b : { ...b, imageUrl: undefined }));
+  if (localStorage.getItem('werka_last_date') !== today) localStorage.removeItem(SAVE_KEY);
   store('werka_last_date', today);
-  return { today, inventory, bouquets, pocket, kisses, elioDay };
+  const s = loadShared(today);
+  const inventory = s.inventory.map(f => ({ ...f, type: f.type as FlowerType, x: 0, y: 0, screenX: 0, screenY: 0, isPicked: true }));
+  const bouquets = s.bouquets.map(({ layout2d, ...b }) => ({
+    ...b, flowers: b.flowers as FlowerType[], description: b.description ?? '', layout: layout2d as BouquetLayout | undefined,
+    imageUrl: b.imageUrl?.startsWith('data:image/png') ? b.imageUrl : undefined,
+  }));
+  return { today, inventory, bouquets, pocket: s.pocket, kisses: s.kisses, elioDay: s.elioDay || null };
 };
 
 // Styled Start Menu Component
@@ -67,6 +63,13 @@ const StartMenu: React.FC<{
       START NEW DAY
       <div className="absolute -left-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity text-2xl">🌻</div>
       <div className="absolute -right-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity text-2xl">🌻</div>
+    </button>
+
+    <button
+      onClick={() => jumpTo('3d', 0.35)}
+      className="mb-3 z-10 px-4 py-2 min-h-[44px] bg-sky-700 text-sky-50 text-sm rounded border-b-4 border-sky-900 hover:bg-sky-600 active:border-b-0 active:mt-1 pixel-text font-bold"
+    >
+      PLAY IN 3D
     </button>
 
     {/* Reset Button */}
@@ -137,7 +140,7 @@ const Intro: React.FC<{ date: string; onComplete: () => void }> = ({ date, onCom
 
 const App: React.FC = () => {
   const [init] = useState(loadSaved);
-  const [gameState, setGameState] = useState<GameState>(GameState.START_MENU);
+  const [gameState, setGameState] = useState<GameState>(JUMP === null ? GameState.START_MENU : GameState.EXPLORING);
   const [inventory, setInventory] = useState<Flower[]>(init.inventory);
   const [bouquets, setBouquets] = useState<Bouquet[]>(init.bouquets);
   const [currentDate, setCurrentDate] = useState<string>(init.today);
@@ -146,24 +149,17 @@ const App: React.FC = () => {
   const [elioDay, setElioDay] = useState<string | null>(init.elioDay);
 
   // Save state whenever it changes
+  useEffect(() => { patchShared({ inventory: inventory.map(f => ({ id: f.id, type: f.type, color: f.color })) }); }, [inventory]);
   useEffect(() => {
-    store('werka_inventory', JSON.stringify(inventory));
-  }, [inventory]);
-
-  useEffect(() => {
-    store('werka_bouquets', JSON.stringify(bouquets));
+    patchShared({ bouquets: bouquets.map(({ layout, ...b }) => ({ ...b, colors: b.flowers.map(t => FLOWER_COLORS[t]), layout2d: layout })) });
   }, [bouquets]);
-
-  useEffect(() => { store('werka_pocket', JSON.stringify(pocket)); }, [pocket]);
-  useEffect(() => { store('werka_kisses_total', String(kisses)); }, [kisses]);
-  useEffect(() => { if (elioDay) store('werka_elio_day', elioDay); }, [elioDay]);
+  useEffect(() => { patchShared({ pocket }); }, [pocket]);
+  useEffect(() => { patchShared({ kisses }); }, [kisses]);
+  useEffect(() => { if (elioDay) patchShared({ elioDay }); }, [elioDay]);
 
   const handleResetProgress = () => {
-    if (confirm("Are you sure you want to reset all progress? This cannot be undone.")) {
-      localStorage.removeItem('werka_inventory');
-      localStorage.removeItem('werka_bouquets');
-      localStorage.removeItem(SAVE_KEY);
-      ['werka_pocket', 'werka_kisses_total', 'werka_elio_day'].forEach(k => localStorage.removeItem(k));
+    if (confirm("Reset all progress, in both the 2D and 3D worlds? This cannot be undone.")) {
+      resetAll(getToday());
       setInventory([]);
       setBouquets([]);
       setPocket([]);
@@ -247,6 +243,7 @@ const App: React.FC = () => {
               onKiss={n => setKisses(k => k + n)}
               elioGifted={elioDay === currentDate}
               onElioGift={() => setElioDay(currentDate)}
+              startTime={JUMP ?? undefined}
             />
           )}
 

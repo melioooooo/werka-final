@@ -5,6 +5,7 @@ import { MobileControls, useIsTouch, useIsLandscape } from './MobileControls';
 import { SoundManager } from '../utils/SoundManager';
 import { makeWorld, SeededRandom, SPAWN, isHouseScreen, pondNorm, FEET, riverDepth, onBridge } from '../utils/world';
 import { skyAt } from '../shared/sky';
+import { jumpTo } from '../shared/jump';
 import { loadCritters, updateCritters, setCritterFlowers, setCritterView, drawCrittersWater, addGroundCritters, drawGroundCritter, drawCrittersAir, drawFireflies, nightOf, critterDebug } from '../utils/critters';
 import { drawBackground, seasonGround, drawSeasonFx, sprite, drawHouse, drawTree, drawRock, drawFlower, drawItem, drawElio, drawElioPeek, elioHide, drawBang, drawHeart, elioPortrait } from '../utils/draw';
 import { newCamera, makeScene, blitCamera } from '../utils/camera';
@@ -38,6 +39,7 @@ interface GameEngineProps {
   onKiss: (n: number) => void;
   elioGifted: boolean;
   onElioGift: () => void;
+  startTime?: number;
 }
 
 interface Particle {
@@ -68,6 +70,9 @@ const ELIO_LINES = [
   "I've been practicing my hiding. Clearly not enough.",
   "Every path today led me to you.",
 ];
+
+// Time of day survives going in and out of the house (the engine remounts each time).
+let dayClock: number | null = null;
 
 const byY = (a: RenderEntry, b: RenderEntry) => a.y - b.y;
 const near = (px: number, py: number, x: number, y: number, r: number) => (px - x) * (px - x) + (py - y) * (py - y) < r * r;
@@ -132,7 +137,7 @@ const loadPicked = (dateSeed: string) => {
   return new Set<string>();
 };
 
-export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventoryChange, initialInventory, dateSeed, pocket, onPocketChange, kisses, onKiss, elioGifted, onElioGift }) => {
+export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventoryChange, initialInventory, dateSeed, pocket, onPocketChange, kisses, onKiss, elioGifted, onElioGift, startTime = 0.35 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
   const touch = useIsTouch();
@@ -161,7 +166,7 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
   const runningRef = useRef(false);
   const screenRef = useRef(currentScreen);
   const obstaclesRef = useRef<Obstacle[]>(world.obstacles[HOUSE_SCREEN.y][HOUSE_SCREEN.x]);
-  const timeRef = useRef(0.35); // 0.0 to 1.0 representing 24h cycle, start at mid-morning (day)
+  const timeRef = useRef(dayClock ?? startTime); // 0.0 to 1.0 representing 24h cycle, start at mid-morning (day)
   const particlesRef = useRef<Particle[]>([]);
   const lastStepTime = useRef(0);
   const lastDust = useRef(0);
@@ -308,7 +313,7 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
       const now = Date.now();
       const dt = now - lastTime;
       lastTime = now;
-      timeRef.current = (timeRef.current + dt / DAY_CYCLE_DURATION) % 1.0;
+      timeRef.current = dayClock = (timeRef.current + dt / DAY_CYCLE_DURATION) % 1.0;
       latest.current.update(dt);
       latest.current.draw();
       animationFrameId = requestAnimationFrame(loop);
@@ -972,6 +977,16 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
           />
 
           {!touch && hud('desktop')}
+
+          {!talk && (
+            <button
+              onClick={() => jumpTo('3d', timeRef.current)}
+              aria-label="Jump to the 3D world"
+              className="absolute top-1.5 right-1.5 z-30 min-w-[44px] min-h-[44px] px-2 bg-sky-800/85 text-sky-50 border-2 border-sky-200/70 rounded pixel-text font-bold text-sm hover:bg-sky-700"
+            >
+              3D
+            </button>
+          )}
 
           {showHelp && !talk && !notification && !(touch && !landscape) && (
             <div className={`absolute bottom-2 sm:bottom-4 left-1/2 -translate-x-1/2 w-max ${touch ? 'max-w-[60%]' : 'max-w-[94%]'} text-center bg-black/55 text-amber-100 px-2.5 py-0.5 rounded font-mono ${touch ? 'text-sm' : 'text-sm sm:text-lg'} leading-tight pointer-events-none z-20`}>

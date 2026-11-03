@@ -1,19 +1,17 @@
-// Saved progress. Keys are prefixed werka3d_ so the 2D game's save is never touched.
+// Saved progress. World-only keys are prefixed werka3d_.
 export type Item = { id: string; type: string; color: string };
 import type { Layout } from './world/bouquet-layout.ts';
 import { DEFAULT_OUTFIT, cleanOutfit, type Outfit } from './world/outfits.ts';
+import { FLOWER_COLORS } from './world/data.ts';
+import { loadShared, patchShared } from '../../shared/save.ts';
 // extras: pocket items tied on (trinket ids, 'kiss', 'golden_kiss'); missing on old bouquets.
 // layout: hand-placed positions (spec v4 §3); missing on old bouquets, which use the auto layout.
 export type Bouquet = { id: string; date: string; flowers: string[]; colors: string[]; extras?: string[]; layout?: Layout };
 
+// Basket, pocket, kisses, Elio's gift and bouquets live in the save shared with the 2D world.
 const K = {
-  inventory: 'werka3d_inventory',
   picked: 'werka3d_picked',
-  bouquets: 'werka3d_bouquets',
   lastDate: 'werka3d_last_date',
-  pocket: 'werka3d_pocket',
-  kisses: 'werka3d_kisses_total',
-  elioDay: 'werka3d_elio_day',
   outfit: 'werka3d_outfit',
 };
 
@@ -38,27 +36,29 @@ export const state = {
   outfit: DEFAULT_OUTFIT as Outfit,
 };
 
-// Load, applying the 2D daily rule: a new calendar day resets inventory, pocket and picked ids.
+// Load, applying the daily rule: a new calendar day resets inventory, pocket and picked ids.
 export function load() {
   state.date = today();
   const fresh = read<string | null>(K.lastDate, null) !== state.date;
-  state.inventory = fresh ? [] : read<Item[]>(K.inventory, []);
+  const s = loadShared(state.date);
+  state.inventory = s.inventory;
   state.picked = new Set(fresh ? [] : read<string[]>(K.picked, []));
-  state.bouquets = read<Bouquet[]>(K.bouquets, []);
-  state.pocket = fresh ? [] : read<string[]>(K.pocket, []);
-  state.kissesTotal = read<number>(K.kisses, 0);
-  state.elioDay = read<string>(K.elioDay, '');
+  state.bouquets = s.bouquets.map(({ layout3d, ...b }) => ({
+    ...b, colors: b.colors ?? b.flowers.map(t => FLOWER_COLORS[t] ?? '#f472b6'), layout: layout3d as Layout | undefined,
+  }));
+  state.pocket = s.pocket;
+  state.kissesTotal = s.kisses;
+  state.elioDay = s.elioDay;
   state.outfit = cleanOutfit(read<Partial<Outfit> | null>(K.outfit, null));
   write(K.lastDate, state.date);
   save();
 }
 
 export function save() {
-  write(K.inventory, state.inventory);
   write(K.picked, [...state.picked]);
-  write(K.bouquets, state.bouquets);
-  write(K.pocket, state.pocket);
-  write(K.kisses, state.kissesTotal);
-  write(K.elioDay, state.elioDay);
   write(K.outfit, state.outfit);
+  patchShared({
+    inventory: state.inventory, pocket: state.pocket, kisses: state.kissesTotal, elioDay: state.elioDay,
+    bouquets: state.bouquets.map(({ layout, ...b }) => ({ ...b, layout3d: layout })),
+  });
 }

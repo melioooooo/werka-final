@@ -74,9 +74,13 @@ export function initMute(isMuted: boolean, toggle: () => boolean) {
   muteBtn.onclick = () => paint(toggle());
 }
 
+const jumpBtn = el(`<button class="jump" aria-label="Jump to the 2D world" hidden>2D</button>`) as HTMLButtonElement;
+export const initJump = (go: () => void) => { jumpBtn.onclick = go; };
+
 let playing = false;
 export function setPlaying(on: boolean) {
   playing = on;
+  jumpBtn.hidden = !on;
   if (!on) { actBtn.hidden = true; stick.hidden = true; }
 }
 
@@ -199,19 +203,20 @@ export async function fade(swap: () => void) {
   fadeEl.classList.remove('on');
 }
 
-export function menu(opts: { bouquets: number; quality: string; onStart: () => void; onGallery: () => void; onReset: () => void; onQuality: () => string }) {
+export function menu(opts: { bouquets: number; quality: string; onStart: () => void; onGallery: () => void; onReset: () => void; onQuality: () => string; onJump: () => void }) {
   const m = el(`<div class="menu"><div class="title-block">
     <h1>Werka's<br>Bouquet</h1>
     <div class="row"><button class="btn petal start">Start today's walk</button>
     <button class="btn ghost gal">Gallery · ${opts.bouquets}</button></div>
-    <div class="row small"><button class="link qual">Graphics: ${opts.quality}</button><button class="link reset">Reset progress</button></div></div>
+    <div class="row small"><button class="link jump2d">Play in 2D</button><button class="link qual">Graphics: ${opts.quality}</button><button class="link reset">Reset progress</button></div></div>
     <p class="hint">${touch ? 'Drag on the left to walk, push to the edge to run. Tap the button to pick.' : 'WASD or arrows to walk, Shift to run. E or Space to pick.'}</p></div>`);
   const close = () => m.remove();
   $(m, '.start').onclick = () => { close(); opts.onStart(); };
   $(m, '.gal').onclick = () => { close(); opts.onGallery(); };
+  $(m, '.jump2d').onclick = () => opts.onJump();
   $(m, '.qual').onclick = () => { $(m, '.qual').textContent = `Graphics: ${opts.onQuality()}`; };
   $(m, '.reset').onclick = () => {
-    if (confirm('Reset all 3D progress? Your bouquets will be deleted.')) { close(); opts.onReset(); }
+    if (confirm('Reset all progress, in both the 2D and 3D worlds? Your bouquets will be deleted.')) { close(); opts.onReset(); }
   };
   $<HTMLButtonElement>(m, '.start').focus();
 }
