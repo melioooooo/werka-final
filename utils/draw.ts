@@ -1463,24 +1463,24 @@ export const SPRITES: Record<string, Pix> = {
     '..rr.rr..', '...rrr...', '...oYo...', '..oYYYo..', '.oYwYYyo.', '.oYwYYyo.', 'oYYYYYyyo', 'ooooooooo', '...oYo...', '....o....'] },
 };
 
-// Elio (docs/elio-design.md): messy near-black hair with a heavy fringe and faded sides, thin silver-gold hexagonal
-// glasses, thin moustache and a smirk, tiny ear stud, black tee with a small green chest mark, black+blue backpack straps.
+// Elio (docs/elio-design.md): tidy near-black hair swept to one side with a clean fringe and faded sides, thin silver-gold
+// hexagonal glasses, thin moustache and a smirk, tiny ear stud, black tee with a small green chest mark.
 // Frame 0 looks left, 1 right.
 const ELIO_PAL = { o: '#140d0a', h: '#2a1d17', H: '#4a3427', f: '#6b5446', s: '#e8b896', S: '#c98f6e', g: '#b3a276', l: '#f3d3b8', L: '#ffffff', W: '#fbfaf6',
-  e: '#1f1a17', m: '#2a1d17', M: '#9a5a4a', E: '#e5e7eb', c: '#1c1c1f', G: '#4ade80', b: '#0d0d10', B: '#2563eb', u: '#9ca3af',
+  e: '#1f1a17', m: '#2a1d17', M: '#9a5a4a', E: '#e5e7eb', c: '#1c1c1f', G: '#4ade80',
   p: '#2b2f3a', P: '#1f222b', n: '#2b2b2b', w: '#e5e5e5' };
 const ELIO_ROWS = [
-    '........o..oo...o.......',
-    '.......oho.oHho.oho.....',
-    '.....o.ohhoohHhoohhoo...',
-    '....ohoohhhhhHhhhhhhho..',
-    '...ohhhhhHhhhhhHhhhhhho.',
-    '..ohhhHhhhhhhhhhhhHhhhho',
-    '..ohhhhhhhhhHhhhhhhhhho.',
-    '...ohhHhhhhhhhhhhhhhhho.',
-    '...ohhhhhhhhhhhhhhhhho..',
+    '.........oooooo.........',
+    '......oooHHhhhhooo......',
+    '....oohhhHHHhhhhhhoo....',
+    '...ohhhhhhHHHhhhhhhho...',
+    '..ohhhhhhhhHHHhhhhhhho..',
+    '..ohhhhhhhhhhHHhhhhhho..',
+    '..ohhhhhhhhhhhhhhhhhho..',
+    '..ohhhhhhhhhhhhhhhhhho..',
+    '...ohhhhhhhhhhhhhhhho...',
     '....ofhhhhhhhhhhhhfo....',
-    '....ofhshhhshhhhshfo....',
+    '....ofhhhhhhhhssshfo....',
     '....ofsgggssssgggsfo....',
     '...osSgLllggggLllgSso...',
     '...osS{P}Sso...',
@@ -1491,13 +1491,13 @@ const ELIO_ROWS = [
     '.....oSSssssssssSSo.....',
     '........oSSSSSSo........',
     '.......occSssSScco......',
-    '....ocbBcccSScccBbco....',
-    '...occbBccccccccBbcco...',
-    '..occcbBccccccGcBbccco..',
-    '..occobBcccccGGcBbocco..',
-    '..ocsobBccccccccBbosco..',
-    '..ossoubccccccccbuosso..',
-    '..osso.bcccccccccb.osso.',
+    '....occccccSScccccco....',
+    '...occcccccccccccccco...',
+    '..occcccccccccGcccccco..',
+    '..occocccccccGGcccocco..',
+    '..ocsoccccccccccccosco..',
+    '..ossoccccccccccccosso..',
+    '..osso.ccccccccccc.osso.',
     '..oSSoocccccccccccooSSo.',
     '...oo.oppppppppppppo.oo.',
     '......opppppPPppppppo...',

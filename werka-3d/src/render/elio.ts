@@ -1,6 +1,6 @@
-// Elio (docs/elio-design.md): same chibi build as Werka (player.ts). Messy near-black hair with a
-// heavy fringe and short faded sides, thin silver-gold hexagon glasses, moustache and a smirk,
-// black tee with a small green mark, backpack straps. Hides behind his cover and peeks out;
+// Elio (docs/elio-design.md): same chibi build as Werka (player.ts). Tidy near-black hair in soft
+// swept locks with a clean fringe and short faded sides, thin silver-gold hexagon glasses, moustache
+// and a smirk, black tee with a small green mark. Hides behind his cover and peeks out;
 // steps out, turns and waves when Werka comes close.
 import * as THREE from 'three';
 import { toon, addOutlines } from './toon.ts';
@@ -27,7 +27,7 @@ const tinyMesh = (g: THREE.BufferGeometry, color: string, x: number, y: number, 
 };
 
 const HAIR = '#2a1d17', HAIR_HI = '#4a3427', FADE = '#5a4436', SKIN = '#e8b896', SKIN_D = '#c98f6e';
-const TEE = '#1c1c1f', PANTS = '#2b2f3a', STRAP = '#16161a', BLUE = '#2563eb', FRAME = '#d6c9a8';
+const TEE = '#1c1c1f', PANTS = '#2b2f3a', FRAME = '#d6c9a8';
 
 export function buildElio(spot: Elio) {
   const root = new THREE.Group();
@@ -48,17 +48,7 @@ export function buildElio(spot: Elio) {
   body.add(mesh(new THREE.CylinderGeometry(0.12, 0.13, 0.06, 8), SKIN_D, 0, 1.13, 0)); // neck
   // Small green squiggle on his left chest (+x, he faces +z).
   body.add(tinyMesh(new THREE.TorusGeometry(0.035, 0.012, 4, 8, Math.PI * 1.4).rotateZ(0.6), '#4ade80', 0.11, 0.98, 0.262));
-  // Backpack straps (black with a blue strip, grey buckles) and the pack on his back.
-  for (const sx of [-1, 1]) {
-    const strap = mesh(new THREE.BoxGeometry(0.08, 0.5, 0.03), STRAP, sx * 0.14, 0.86, 0.255);
-    strap.rotation.x = -0.12;
-    body.add(strap);
-    body.add(tinyMesh(new THREE.BoxGeometry(0.025, 0.46, 0.012), BLUE, sx * 0.14, 0.87, 0.275));
-    body.add(tinyMesh(new THREE.BoxGeometry(0.1, 0.045, 0.03), '#9ca3af', sx * 0.14, 0.72, 0.285));
-    body.add(mesh(new THREE.BoxGeometry(0.09, 0.08, 0.36), STRAP, sx * 0.15, 1.08, 0.04)); // over the shoulder
-  }
-  body.add(mesh(new THREE.BoxGeometry(0.46, 0.5, 0.2), '#22252c', 0, 0.86, -0.32));
-  body.add(mesh(new THREE.BoxGeometry(0.36, 0.2, 0.06), BLUE, 0, 0.76, -0.43));
+  body.add(mesh(new THREE.TorusGeometry(0.135, 0.022, 4, 10).rotateX(Math.PI / 2 - 0.12), '#2c2c32', 0, 1.1, 0.012)); // crew collar
   const arms = [-1, 1].map(side => {
     const arm = new THREE.Group();
     arm.position.set(side * 0.3, 1.06, 0);
@@ -75,23 +65,21 @@ export function buildElio(spot: Elio) {
   head.add(mesh(new THREE.IcosahedronGeometry(0.4, 1), SKIN));
   // Short faded sides and back: a thin dark shell hugging the skull, narrow at the ears.
   head.add(mesh(new THREE.IcosahedronGeometry(0.415, 1).scale(1, 0.62, 1).translate(0, 0.1, -0.06), FADE));
-  // Big messy top: a wide crown plus tufts sticking up and out.
-  head.add(mesh(new THREE.IcosahedronGeometry(0.42, 1).scale(1.05, 0.6, 1.02).translate(0, 0.26, -0.03), HAIR));
-  const TUFTS: [number, number, number, number, number, number][] = [
-    [-0.24, 0.42, 0.08, 0.15, 0.5, -0.6], [-0.05, 0.52, 0.12, 0.16, 0.2, -0.2], [0.18, 0.47, 0.1, 0.15, -0.3, 0.5],
-    [0.3, 0.36, -0.02, 0.13, -0.5, 0.9], [-0.33, 0.33, -0.05, 0.13, 0.4, -0.9], [0.05, 0.5, -0.18, 0.15, 0.6, 0.1],
-    [-0.18, 0.44, -0.24, 0.13, 0.8, -0.4], [0.2, 0.42, -0.24, 0.13, 0.7, 0.5], [0.02, 0.6, -0.02, 0.12, 0, 0.3],
+  // Smooth crown, then a few wide locks lying on it, all swept the same way: volume with no stray tufts.
+  head.add(mesh(new THREE.IcosahedronGeometry(0.43, 2).scale(1.03, 0.66, 1.02).translate(0, 0.2, -0.03), HAIR));
+  const LOCKS: [number, number, number, number, number, number][] = [ // x, y, z, size, tip forward, tip sideways
+    [-0.2, 0.43, 0.06, 0.2, 0.15, 0.45], [0.02, 0.47, 0.08, 0.21, 0.2, 0.1], [0.22, 0.41, 0.04, 0.19, 0.15, -0.45],
+    [-0.13, 0.43, -0.18, 0.2, -0.45, 0.3], [0.13, 0.43, -0.18, 0.2, -0.45, -0.3],
   ];
-  // Soft rounded tufts (squashed, tipped blobs) rather than spikes: messy volume on top.
-  TUFTS.forEach(([x, y, z, r, rx, rz], i) => {
-    const t = mesh(new THREE.IcosahedronGeometry(r * 1.1, 0).scale(1.35, 0.5, 0.8).translate(r * 0.3, r * 0.15, 0), i % 3 ? HAIR : HAIR_HI, x, y - 0.04, z);
-    t.rotation.set(rx * 0.7, i * 1.3, rz * 0.8 + (i % 2 ? 0.35 : -0.35));
-    head.add(t);
+  LOCKS.forEach(([x, y, z, r, rx, rz], i) => {
+    const l = mesh(new THREE.IcosahedronGeometry(r, 1).scale(1.05, 0.42, 1.3), i === 1 ? HAIR_HI : HAIR, x, y, z);
+    l.rotation.set(rx, 0.3, rz);
+    head.add(l);
   });
-  // Heavy fringe falling over the forehead, swept a little to one side.
-  for (const [x, y, z, r, rz] of [[-0.2, 0.25, 0.3, 0.12, 0.5], [-0.05, 0.22, 0.34, 0.13, 0.2], [0.11, 0.23, 0.33, 0.12, -0.15], [0.25, 0.27, 0.27, 0.1, -0.5]]) {
-    const f = mesh(new THREE.IcosahedronGeometry(r, 0).scale(1.15, 0.75, 0.6), HAIR, x, y - 0.02, z);
-    f.rotation.set(-0.35, 0, rz);
+  // Clean fringe: three overlapping locks swept to his left, the forehead showing at the parting.
+  for (const [x, y, z, r, rz] of [[-0.21, 0.2, 0.3, 0.14, 0.55], [-0.04, 0.2, 0.345, 0.15, 0.3], [0.14, 0.235, 0.325, 0.13, 0.1]]) {
+    const f = mesh(new THREE.IcosahedronGeometry(r, 1).scale(1.3, 0.62, 0.5), HAIR, x, y, z);
+    f.rotation.set(-0.3, 0, rz);
     head.add(f);
   }
   head.add(mesh(new THREE.SphereGeometry(0.07, 6, 4), SKIN, -0.4, -0.02, 0), mesh(new THREE.SphereGeometry(0.07, 6, 4), SKIN, 0.4, -0.02, 0)); // ears
@@ -102,7 +90,7 @@ export function buildElio(spot: Elio) {
     // Small almond whites, dark irises glancing to his left, a lid line above: no googly eyes.
     head.add(tinyMesh(new THREE.SphereGeometry(0.04, 8, 5).scale(1.15, 0.62, 0.3), '#f6efe6', x, -0.02, 0.378));
     head.add(tinyMesh(new THREE.SphereGeometry(0.026, 6, 4).scale(0.9, 1, 0.35), '#2a1d17', x + 0.018, -0.022, 0.388));
-    head.add(tinyMesh(new THREE.BoxGeometry(0.1, 0.014, 0.012).rotateZ(x > 0 ? -0.12 : 0.12), '#3a2a20', x, 0.012, 0.39)); // lid / brow line
+    head.add(tinyMesh(new THREE.BoxGeometry(0.1, 0.014, 0.012).rotateZ(x > 0 ? 0.1 : -0.1), '#3a2a20', x, 0.012, 0.39)); // lid / brow line
     head.add(tinyMesh(new THREE.BoxGeometry(0.035, 0.012, 0.005).rotateZ(0.7), '#ffffff', x - 0.055, 0.045, 0.4)); // lens glint
     head.add(tinyMesh(new THREE.BoxGeometry(0.06, 0.01, 0.01), FRAME, x * 1.95, 0.01, 0.33)); // temples
   }
@@ -111,7 +99,7 @@ export function buildElio(spot: Elio) {
   for (const sx of [-1, 1]) head.add(tinyMesh(new THREE.BoxGeometry(0.075, 0.016, 0.02).rotateZ(sx * 0.12), HAIR, sx * 0.042, -0.13, 0.385));
   head.add(tinyMesh(new THREE.TorusGeometry(0.05, 0.012, 4, 8, Math.PI * 0.7).rotateZ(Math.PI * 1.22), '#7a3b2e', 0.035, -0.17, 0.372)); // smirk, up on his left
   head.add(tinyMesh(new THREE.SphereGeometry(0.012, 4, 3), '#7a3b2e', 0.095, -0.165, 0.36));
-  head.add(tinyMesh(new THREE.SphereGeometry(0.05, 6, 3).scale(1, 0.55, 0.3), '#e09a8a', 0.27, -0.13, 0.32));
+  head.add(tinyMesh(new THREE.SphereGeometry(0.05, 6, 3).scale(1, 0.55, 0.3), '#e09a8a', 0.23, -0.12, 0.3));
   body.add(head);
 
   torso.userData.keep = true;
