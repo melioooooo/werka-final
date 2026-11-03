@@ -332,6 +332,7 @@ const placeItems = (dateSeed: string, map: Biome[][], obstacles: Obstacle[][][],
   type Spot = { sx: number; sy: number; x: number; y: number; gx: number; gy: number; nearCover: boolean };
   const spots: Spot[] = [];
   const shore: Spot[] = []; // dry land right next to water: where shells wash up
+  const rocky: Spot[] = []; // open ground beside a rock: where fossils turn up
   for (let r = 0; r < GH; r++) {
     for (let c = 0; c < GW; c++) {
       if (!reach[r * GW + c]) continue;
@@ -347,6 +348,7 @@ const placeItems = (dateSeed: string, map: Biome[][], obstacles: Obstacle[][][],
       const nearCover = obstacles[p.sy][p.sx].some(o => o.type !== 'HOUSE' && Math.hypot(o.x + 20 - p.x, o.y + 20 - p.y) < 64);
       const s = { ...p, nearCover };
       spots.push(s);
+      if (obstacles[p.sy][p.sx].some(o => o.type === 'ROCK' && Math.hypot(o.x + 20 - p.x, o.y + 20 - p.y) < 72)) rocky.push(s);
       if (rd < 82 && Math.abs(p.x - bridgeX(p.sx, p.sy)) > 70) shore.push(s);
       else if (pn < 1.45) shore.push(s);
     }
@@ -385,17 +387,20 @@ const placeItems = (dateSeed: string, map: Biome[][], obstacles: Obstacle[][][],
   const items: WorldItem[] = [];
   const keys = Object.keys(TRINKETS);
   const shells = keys.filter(k => TRINKETS[k].shell);
-  const landKeys = keys.filter(k => !TRINKETS[k].shell);
+  const fossils = keys.filter(k => TRINKETS[k].fossil);
+  const landKeys = keys.filter(k => !TRINKETS[k].shell && !TRINKETS[k].fossil);
   const nTrinkets = 9 + Math.floor(rng.next() * 5); // 9-13
   const nShore = 2 + Math.floor(rng.next() * 3); // 2-4 of them washed up on a shore
+  const nFossil = 1 + Math.floor(rng.next() * 2); // 1-2 of them beside rocks
   for (let i = 0; i < nTrinkets; i++) {
-    const s = (i < nShore && pick(shore)) || pick(spots);
+    const wantRock = i >= nShore && i < nShore + nFossil;
+    const s = (i < nShore && pick(shore)) || (wantRock && pick(rocky)) || pick(spots);
     if (!s) continue;
     const biome = map[s.sy][s.sx];
     const onShore = shore.includes(s);
-    const pool = onShore ? shells : keys;
+    const pool = onShore ? shells : wantRock && rocky.includes(s) ? fossils : landKeys;
     const fav = pool.filter(k => TRINKETS[k].biomes!.includes(biome));
-    const kind = fav.length && rng.next() < 0.65 ? weighted(fav) : weighted(onShore ? shells : landKeys);
+    const kind = fav.length && rng.next() < 0.65 ? weighted(fav) : weighted(pool);
     items.push({ id: `t:${i}`, kind, x: s.x, y: s.y, screenX: s.sx, screenY: s.sy, isPicked: false });
   }
   const nKisses = 3 + Math.floor(rng.next() * 3);

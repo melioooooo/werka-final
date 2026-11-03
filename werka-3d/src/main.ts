@@ -503,7 +503,7 @@ if (import.meta.env.DEV) {
         openArrange(flowers.map((_, i) => i), extras.map((_, i) => i));
       },
       gallery: () => openGallery('menu'),
-      elio, closeup: (v: number[] | null) => { devCam = v; },
+      elio, pickupIcon, closeup: (v: number[] | null) => { devCam = v; },
       setDay: (t: number) => { dayT = t; },
       get quality() { return quality; },
       setQuality: (q: Quality) => applyQuality(q),

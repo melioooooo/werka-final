@@ -41,6 +41,18 @@ const CHARMS: Record<string, string> = {
   butterfly: `<path d="M0 -2 Q-14 -24 -20 -10 Q-22 2 0 2 Z M0 -2 Q14 -24 20 -10 Q22 2 0 2 Z" fill="#a78bfa" stroke="#4c1d95" stroke-width="2.5"/>
 <path d="M0 2 Q-16 4 -12 16 Q-4 16 0 4 Z M0 2 Q16 4 12 16 Q4 16 0 4 Z" fill="#c4b5fd" stroke="#4c1d95" stroke-width="2.5"/>
 <path d="M0 -8 L0 12 M0 -8 L-4 -16 M0 -8 L4 -16" stroke="#4c1d95" stroke-width="3" fill="none"/>`,
+  ammonite: `<circle r="20" fill="#b08d57" stroke="#5c4526" stroke-width="3"/><path d="M0 -20 Q17 -18 17 0 Q16 14 0 14 Q-12 13 -12 1 Q-12 -8 -2 -8 Q6 -8 6 0 Q5 5 0 5" stroke="#5c4526" stroke-width="3" fill="none" stroke-linecap="round"/>
+<path d="M-14 -14 L-9 -9 M14 -14 L10 -10 M-18 6 L-12 4" stroke="#8a6b3d" stroke-width="2"/>`,
+  trilobite: `<path d="M0 -21 Q18 -20 16 -6 Q15 12 0 22 Q-15 12 -16 -6 Q-18 -20 0 -21 Z" fill="#8d8378" stroke="#3f3a34" stroke-width="3"/>
+<path d="M-15 -6 L15 -6 M-14 1 L14 1 M-11 8 L11 8 M-6 14 L6 14" stroke="#3f3a34" stroke-width="2"/><path d="M-5 -6 L-3 16 M5 -6 L3 16" stroke="#b8afa3" stroke-width="2"/>`,
+  fern_fossil: `<rect x="-19" y="-21" width="38" height="42" rx="6" fill="#9a9a86" stroke="#56564a" stroke-width="3"/><path d="M0 16 L0 -16 M0 10 L-11 2 M0 10 L11 2 M0 3 L-10 -5 M0 3 L10 -5 M0 -4 L-8 -11 M0 -4 L8 -11" stroke="#5f6f4f" stroke-width="2.5" fill="none" stroke-linecap="round"/>`,
+  shark_tooth: `<path d="M-17 -16 Q0 -22 17 -16 L2 22 Q0 24 -2 22 Z" fill="#f1ead6" stroke="#6b6248" stroke-width="3" stroke-linejoin="round"/><path d="M-15 -11 Q0 -17 15 -11" stroke="#8a7a58" stroke-width="4" fill="none"/>`,
+  nautilus: `<path d="M-6 -20 Q20 -20 20 2 Q19 20 -2 20 Q-20 18 -20 2 Q-19 -6 -11 -6 Q-3 -6 -3 2 Q-4 6 -8 6" fill="#f4e3cf" stroke="#7c5a3c" stroke-width="3" stroke-linecap="round"/>
+<path d="M2 -19 L1 -8 M11 -15 L6 -5 M18 -6 L8 1 M17 8 L6 7" stroke="#c8814a" stroke-width="3" stroke-linecap="round"/>`,
+  cowrie: `<ellipse rx="20" ry="15" fill="#d9a066" stroke="#6b3f1f" stroke-width="3"/><path d="M-15 1 Q0 -3 15 1" stroke="#3b2110" stroke-width="3" fill="none"/><path d="M-8 -7 h.1 M2 -9 h.1 M10 -6 h.1 M-6 8 h.1 M6 8 h.1" stroke="#fbe3c0" stroke-width="4" stroke-linecap="round"/>`,
+  whelk: `<path d="M-9 -22 Q4 -14 13 2 Q17 15 2 20 Q-12 20 -11 4 Q-11 -10 -9 -22 Z" fill="#c9b79c" stroke="#6e5d45" stroke-width="3" stroke-linejoin="round"/><path d="M-9 -12 L1 -12 M-10 -3 L8 -5 M-10 6 L13 3" stroke="#94826a" stroke-width="2.5"/><path d="M-3 10 Q3 15 9 9" stroke="#e6dac6" stroke-width="3" fill="none"/>`,
+  urchin: `<path d="M0 -24 L0 24 M-24 0 L24 0 M-17 -17 L17 17 M17 -17 L-17 17 M-9 -22 L9 22 M9 -22 L-9 22 M-22 -9 L22 9 M22 -9 L-22 9" stroke="#6d28d9" stroke-width="2.5" stroke-linecap="round"/><circle r="14" fill="#8b5cf6" stroke="#3b1a78" stroke-width="3"/><circle cx="-4" cy="-5" r="3" fill="#c4b5fd"/>`,
+  sand_dollar: `<circle r="20" fill="#efe6d2" stroke="#a08f6e" stroke-width="3"/><g fill="#c8b894"><ellipse cy="-10" rx="2.5" ry="6"/><ellipse cy="-10" rx="2.5" ry="6" transform="rotate(72)"/><ellipse cy="-10" rx="2.5" ry="6" transform="rotate(144)"/><ellipse cy="-10" rx="2.5" ry="6" transform="rotate(216)"/><ellipse cy="-10" rx="2.5" ry="6" transform="rotate(288)"/></g>`,
   pink_shell: `<path d="M-4 -21 Q16 -14 18 4 Q16 18 0 20 Q-14 18 -17 6 Q-18 -6 -4 -21 Z" fill="#f9a8d4" stroke="#9d174d" stroke-width="3"/>
 <path d="M-4 -21 Q2 -4 -10 10 M-4 -21 Q10 -2 4 16 M-4 -21 Q16 -6 14 8" stroke="#ec4899" stroke-width="2" fill="none"/><path d="M-12 4 Q-6 10 2 8" stroke="#fdf2f8" stroke-width="2.5" fill="none"/>`,
   scallop: `<path d="M0 16 L-20 -4 Q-14 -22 0 -22 Q14 -22 20 -4 Z" fill="#fdba74" stroke="#9a3412" stroke-width="3"/>

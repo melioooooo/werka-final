@@ -149,7 +149,7 @@ export const RUN_MULT = 1.7;
 
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'very_rare';
 export const RARITY_WEIGHT: Record<Rarity, number> = { common: 1, uncommon: 0.5, rare: 0.2, very_rare: 0.07 };
-export interface PocketInfo { name: string; emoji: string; color: string; biomes?: Biome[]; rarity?: Rarity; shell?: boolean }
+export interface PocketInfo { name: string; emoji: string; color: string; biomes?: Biome[]; rarity?: Rarity; shell?: boolean; fossil?: boolean }
 
 export const TRINKETS: Record<string, PocketInfo> = {
   ribbon: { name: 'Silk Ribbon', emoji: '🎀', color: '#f472b6', biomes: [Biome.GRASS, Biome.MEADOW] },
@@ -176,6 +176,17 @@ export const TRINKETS: Record<string, PocketInfo> = {
   moon_charm: { name: 'Moon Charm', emoji: '🌙', color: '#c4b5fd', biomes: [Biome.ENCHANTED], rarity: 'rare' },
   ladybug: { name: 'Ladybug Pin', emoji: '🐞', color: '#ef4444', biomes: [Biome.MEADOW, Biome.GRASS, Biome.FOREST] },
   bell: { name: 'Tiny Bell', emoji: '🔔', color: '#facc15', biomes: [Biome.MOUNTAIN, Biome.GRASS], rarity: 'uncommon' },
+  // v5 fossils: beside rocks
+  ammonite: { name: 'Ammonite', emoji: '🐚', color: '#b08d57', biomes: [Biome.MOUNTAIN, Biome.DESERT], rarity: 'uncommon', fossil: true },
+  trilobite: { name: 'Trilobite', emoji: '🪲', color: '#8d8378', biomes: [Biome.MOUNTAIN, Biome.DESERT], rarity: 'rare', fossil: true },
+  fern_fossil: { name: 'Fern Fossil', emoji: '🌿', color: '#9a9a86', biomes: [Biome.FOREST, Biome.MOUNTAIN], rarity: 'uncommon', fossil: true },
+  shark_tooth: { name: 'Shark Tooth', emoji: '🦷', color: '#f1ead6', biomes: [Biome.RIVER, Biome.TROPICAL, Biome.DESERT], rarity: 'rare', fossil: true },
+  // v5 more shells
+  nautilus: { name: 'Nautilus', emoji: '🐚', color: '#f4e3cf', biomes: [Biome.TROPICAL, Biome.RIVER], rarity: 'rare', shell: true },
+  cowrie: { name: 'Cowrie', emoji: '🐚', color: '#d9a066', biomes: [Biome.TROPICAL, Biome.RIVER], shell: true },
+  whelk: { name: 'Whelk', emoji: '🐚', color: '#c9b79c', biomes: [Biome.RIVER, Biome.SWAMP], shell: true },
+  urchin: { name: 'Sea Urchin', emoji: '🟣', color: '#8b5cf6', biomes: [Biome.TROPICAL], rarity: 'uncommon', shell: true },
+  sand_dollar: { name: 'Sand Dollar', emoji: '⚪', color: '#efe6d2', biomes: [Biome.TROPICAL, Biome.RIVER], rarity: 'uncommon', shell: true },
 };
 export const rarityOf = (k: string): Rarity => TRINKETS[k]?.rarity ?? 'common';
 

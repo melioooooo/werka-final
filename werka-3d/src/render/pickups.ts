@@ -109,6 +109,62 @@ const MODELS: Record<string, () => Part[]> = {
     [S(0.3, 12, 6, ).scale(1, 0.32, 0.8).translate(0, -0.13, 0), '#cbd5e1'], [S(0.24, 10, 5).scale(1, 0.2, 0.7).translate(0, -0.1, 0.02), '#e2e8f0']],
   black_pearl: () => [[S(0.19, 16, 12).translate(0, 0.06, 0.04), '#475569'], [S(0.05).translate(-0.07, 0.14, 0.18), '#cbd5e1'],
     [S(0.3, 12, 6).scale(1, 0.32, 0.8).translate(0, -0.13, 0), '#64748b'], [S(0.24, 10, 5).scale(1, 0.2, 0.7).translate(0, -0.1, 0.02), '#94a3b8']],
+  // v5 fossils, each on a small slab or as a stone-coloured piece.
+  ammonite: () => [
+    [new THREE.CylinderGeometry(0.3, 0.32, 0.08, 10).rotateX(Math.PI / 2).translate(0, 0, -0.08), '#8a7a62'],
+    ...[0, 1, 2].map((i): Part => [new THREE.TorusGeometry(0.23 - i * 0.07, 0.055 - i * 0.008, 6, 16).translate(i * 0.012, -i * 0.012, 0), i % 2 ? '#8a6b3d' : '#b08d57']),
+    [S(0.045, 6, 4), '#d9bf8f'],
+    ...Array.from({ length: 8 }, (_, i): Part => [new THREE.BoxGeometry(0.018, 0.09, 0.02).translate(0, 0.23, 0.055).rotateZ(i * Math.PI / 4), '#6e5430']),
+  ],
+  trilobite: () => [
+    [new THREE.CylinderGeometry(0.33, 0.35, 0.06, 9).rotateX(Math.PI / 2).translate(0, 0, -0.1), '#a69c8c'],
+    [S(0.14, 9, 6).scale(1.3, 0.8, 0.45).translate(0, 0.17, 0), '#6b635a'],
+    ...[0, 1, 2, 3].map((i): Part => [S(0.15 - i * 0.022, 8, 5).scale(1.25, 0.38, 0.42).translate(0, 0.05 - i * 0.075, 0), i % 2 ? '#847a6f' : '#5e564e']),
+    [S(0.04, 6, 4).scale(0.9, 3, 0.7).translate(0, -0.05, 0.055), '#b8afa3'],
+  ],
+  fern_fossil: () => [
+    [new THREE.BoxGeometry(0.5, 0.56, 0.09).translate(0, 0, -0.03), '#9a9a86'],
+    [new THREE.BoxGeometry(0.022, 0.42, 0.02).translate(0, 0, 0.025), '#566349'],
+    ...[-1, 1].flatMap(sx => [0, 1, 2, 3].map((i): Part => [
+      new THREE.BoxGeometry(0.13 - i * 0.018, 0.03, 0.02).translate(sx * (0.065 - i * 0.009), 0, 0.025).rotateZ(sx * 0.5).translate(0, -0.13 + i * 0.09, 0), '#6c7a56'])),
+  ],
+  shark_tooth: () => [
+    [new THREE.ConeGeometry(0.22, 0.46, 3).scale(1, 1, 0.42).rotateZ(Math.PI).translate(0, -0.05, 0), '#f1ead6'],
+    [S(0.12, 7, 4).scale(1.5, 0.45, 0.48).translate(0, 0.19, 0), '#b09a72'],
+  ],
+  // v5 shells.
+  nautilus: () => [
+    [S(0.26, 12, 8).scale(1, 1, 0.5).translate(0.03, 0, 0), '#f4e3cf'],
+    ...[-0.5, 0.05, 0.6, 1.15, 1.7].map((a): Part => [new THREE.BoxGeometry(0.045, 0.13, 0.02).translate(0, 0.15, 0.095).rotateZ(a - 0.6).translate(0.03, 0, 0), '#c8814a']),
+    [new THREE.TorusGeometry(0.062, 0.026, 6, 12).translate(-0.04, -0.02, 0.115), '#8a5a35'],
+    [S(0.13, 8, 5).scale(0.55, 1.15, 0.72).translate(-0.17, -0.1, 0.03), '#6f4a2f'],
+  ],
+  cowrie: () => [
+    [S(0.24, 11, 8).scale(1.15, 0.72, 0.7), '#d9a066'],
+    [S(0.2, 8, 5).scale(1, 0.09, 0.2).translate(0, -0.03, 0.14), '#3b2110'],
+    ...[-0.12, -0.04, 0.04, 0.12].map((x): Part => [new THREE.BoxGeometry(0.015, 0.05, 0.01).translate(x, -0.03, 0.17), '#fbe3c0']),
+    ...[[-0.14, 0.07], [0.02, 0.11], [0.15, 0.06]].map(([x, y]): Part => [S(0.022, 5, 3).translate(x, y, 0.11), '#f4cf9f']),
+  ],
+  whelk: () => [
+    [new THREE.ConeGeometry(0.17, 0.54, 9).rotateZ(0.32).translate(0, 0.03, 0), '#c9b79c'],
+    ...[[0.041, 0.12, -0.094], [0, 0.08, 0.03], [-0.041, 0.04, 0.154]].map(([x, r, y]): Part => [new THREE.TorusGeometry(r, 0.022, 5, 12).rotateX(Math.PI / 2).rotateZ(0.32).translate(x, y, 0), '#94826a']),
+    [S(0.1, 7, 5).scale(0.8, 1.2, 0.45).translate(0.05, -0.1, 0.11), '#f3e8d8'],
+  ],
+  urchin: () => [
+    [new THREE.IcosahedronGeometry(0.19, 1).scale(1, 0.85, 1), '#8b5cf6'],
+    ...Array.from({ length: 30 }, (_, i): Part => { // spines spread evenly on a Fibonacci sphere
+      const y = 1 - (i + 0.5) / 15, r = Math.sqrt(1 - y * y), a = i * 2.39996;
+      const dir = new THREE.Vector3(Math.cos(a) * r, y, Math.sin(a) * r);
+      const g = new THREE.ConeGeometry(0.022, 0.13, 4).translate(0, 0.065, 0);
+      g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir));
+      return [g.translate(dir.x * 0.17, dir.y * 0.145, dir.z * 0.17), i % 3 ? '#6d28d9' : '#c4b5fd'];
+    }),
+  ],
+  sand_dollar: () => [
+    [new THREE.CylinderGeometry(0.25, 0.27, 0.05, 14).rotateX(Math.PI / 2), '#efe6d2'],
+    ...Array.from({ length: 5 }, (_, i): Part => [S(0.04, 6, 4).scale(0.55, 1.5, 0.3).translate(0, 0.13, 0.025).rotateZ(i * Math.PI * 0.4), '#b5a37e']),
+    [S(0.025, 5, 3).translate(0, 0, 0.025), '#b5a37e'],
+  ],
   // v4 trinkets.
   clover: () => [
     ...[0, 1, 2, 3].map((i): Part => [heart(0.05, 0.02).scale(0.32, 0.32, 1).translate(0, 0.14, i * 0.012).rotateZ(i * Math.PI / 2 + Math.PI / 4), i % 2 ? '#4ade80' : '#22c55e']),

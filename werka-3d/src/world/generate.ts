@@ -291,22 +291,35 @@ function placeExtras(w: World, reach: (x: number, z: number) => boolean) {
     }
     return null;
   };
+  // Fossil spot: open ground right beside a rock.
+  const rockSpot = () => {
+    for (let t = 0; t < 60 && w.rocks.length; t++) {
+      const k = w.rocks[Math.floor(rng.next() * w.rocks.length)], a = rng.range(0, Math.PI * 2), d = k.s + rng.range(0.9, 1.8);
+      const x = k.x + Math.cos(a) * d, z = k.z + Math.sin(a) * d;
+      if (Math.abs(x) > lim || Math.abs(z) > lim || !free(x, z, 0.5) || taken.some(o => Math.hypot(o.x - x, o.z - z) < (o === w.elio ? 4 : 1.2))) continue;
+      if (w.trinkets.concat(w.kisses).some(o => Math.hypot(o.x - x, o.z - z) < 6)) continue;
+      return { x, z };
+    }
+    return null;
+  };
   // Rarity-weighted pick (common 1, uncommon 0.5, rare 0.2, very rare 0.07).
   const weighted = (list: Trinket[]) => {
     let r = rng.next() * list.reduce((s, t) => s + RARITY_WEIGHT[rarityOf(t)], 0);
     for (const t of list) if ((r -= RARITY_WEIGHT[rarityOf(t)]) <= 0) return t;
     return list[list.length - 1];
   };
-  const shells = TRINKETS.filter(t => t.shell), land = TRINKETS.filter(t => !t.shell);
+  const shells = TRINKETS.filter(t => t.shell), fossils = TRINKETS.filter(t => t.fossil), land = TRINKETS.filter(t => !t.shell && !t.fossil);
   const nT = 9 + Math.floor(rng.next() * 5), nShore = 2 + Math.floor(rng.next() * 3), nK = 3 + Math.floor(rng.next() * 3);
+  const nFossil = 1 + Math.floor(rng.next() * 2);
   for (let i = 0; i < nT; i++) {
-    const shore = i < nShore;
-    const p = shore ? shoreSpot() : spot(15);
+    const shore = i < nShore, rock = !shore && i < nShore + nFossil;
+    const near = rock ? rockSpot() : null;
+    const p = shore ? shoreSpot() : near ?? spot(15);
     if (!p) continue;
     const b = biomeAt(w, p.x, p.z);
-    const pool = shore ? shells : TRINKETS;
+    const pool = shore ? shells : near ? fossils : land;
     const fav = pool.filter(t => t.biomes.includes(b));
-    const type = (fav.length && rng.next() < 0.8 ? weighted(fav) : weighted(shore ? shells : land)).id;
+    const type = (fav.length && rng.next() < 0.8 ? weighted(fav) : weighted(pool)).id;
     w.trinkets.push({ id: `t:${i}`, type, ...p });
   }
   for (let i = 0; i < nK; i++) {

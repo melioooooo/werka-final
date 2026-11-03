@@ -80,10 +80,11 @@ const glassMat = toon({ color: '#d8eef2', transparent: true, opacity: 0.28, rim:
 const outlineMat = outline('#1f2a2c', 0.022);
 
 // --- Treasures --------------------------------------------------------------------------
-// Display order on the shelf; collected ones fill the cushions in this order (6 x 3).
-const SLOTS = ['star', 'black_pearl', 'pearl', 'moon_charm', 'butterfly', 'marble', 'crystal', 'pink_shell', 'spiral_shell', 'scallop', 'shell', 'ring',
+// Display order on the shelf; collected ones fill the cushions in this order (8 x 3).
+const SLOTS = ['star', 'black_pearl', 'pearl', 'trilobite', 'shark_tooth', 'nautilus', 'moon_charm', 'ammonite', 'fern_fossil', 'butterfly', 'marble', 'crystal',
+  'urchin', 'sand_dollar', 'pink_shell', 'spiral_shell', 'cowrie', 'whelk', 'scallop', 'shell', 'ring',
   'bell', 'amber', 'clover', 'ladybug', 'feather', 'key', 'button', 'ribbon', 'acorn', 'pebble', 'kiss'];
-const SHELF = { x: 4.8, z: -4.92, rows: [3.45, 2.6, 1.75], cols: [-1.35, -0.81, -0.27, 0.27, 0.81, 1.35] };
+const SHELF = { x: 4.8, z: -4.92, rows: [3.45, 2.6, 1.75], cols: [-1.47, -1.05, -0.63, -0.21, 0.21, 0.63, 1.05, 1.47] };
 let treasureState = { items: [] as string[], kisses: 0 };
 let treasureHost: THREE.Group | null = null;
 let goldHeart: THREE.Object3D | null = null;
@@ -130,7 +131,7 @@ function rebuildTreasures() {
       t.add(m);
     }
     t.position.set(SHELF.x + SHELF.cols[i % nc], SHELF.rows[Math.floor(i / nc)] + 0.06, SHELF.z + 0.05);
-    t.scale.setScalar(1.15); // read from the high camera on a phone
+    t.scale.setScalar(0.98); // read from the high camera on a phone
     g.add(t);
   });
   // Kiss jar: one little heart per kiss (up to 14), plus the counter plaque.
@@ -384,7 +385,7 @@ function buildStatic() {
   for (const y of SHELF.rows) a(Box(3.3, 0.07, 0.5), DR, DX, y, -4.95);
   a(Box(3.6, 0.16, 0.6), DR, DX, 4.18, -4.93);
   a(Box(3.7, 0.08, 0.66), WOOD, DX, 4.29, -4.92);
-  for (const y of SHELF.rows) for (const c of SHELF.cols) a(Cyl(0.2, 0.22, 0.05, 10), '#d8b08a', DX + c, y + 0.06, SHELF.z + 0.05);
+  for (const y of SHELF.rows) for (const c of SHELF.cols) a(Cyl(0.17, 0.19, 0.05, 10), '#d8b08a', DX + c, y + 0.06, SHELF.z + 0.05);
   a(Cyl(0.26, 0.28, 0.06, 12), '#d8b08a', DX, 4.36, SHELF.z + 0.12);
   // Bunting along the top of the dresser.
   for (let i = 0; i < 7; i++) a(new THREE.ConeGeometry(0.11, 0.2, 3).rotateX(Math.PI), ['#f472b6', '#facc15', '#8fb08a', '#7fa3c8'][i % 4], DX - 1.45 + i * 0.48, 3.98, -4.62);

@@ -1438,6 +1438,24 @@ export const SPRITES: Record<string, Pix> = {
   kiss: { pal: { o: '#9d174d', H: '#f472b6', w: '#ffffff' }, rows: [
     '.oo...oo.', 'oHHo.oHHo', 'oHwHoHHHo', 'oHHHHHHHo', '.oHHHHHo.', '..oHHHo..', '...oHo...', '....o....'] },
   // v4 shells
+  ammonite: { pal: { o: '#5c4526', A: '#b08d57', a: '#8a6b3d', w: '#d9bf8f' }, rows: [
+    '..oooooo..', '.oAwAAaAo.', 'oAwaaaaAAo', 'oAaoAAoaAo', 'oAaAoaAaAo', 'oAaAooAaAo', 'oAaaAAaaAo', '.oAAaaAAo.', '..oooooo..'] },
+  trilobite: { pal: { o: '#3f3a34', T: '#8d8378', t: '#6b635a', w: '#b8afa3' }, rows: [
+    '...oooo...', '..oTwTTo..', '.oTTTTTTo.', 'oTTTttTTTo', 'otttTTttto', '.oTTttTTo.', '.ottTTtto.', '..oTttTo..', '...oTTo...', '....oo....'] },
+  fern_fossil: { pal: { o: '#56564a', S: '#9a9a86', s: '#bdbda8', f: '#5f6f4f' }, rows: [
+    'oooooooooo', 'oSsSSfSSSo', 'oSSfSfSfSo', 'oSSSfffSSo', 'oSfSSfSSfo', 'oSSfSfSfSo', 'oSSSSfSSSo', 'oSSSSfSSSo', 'oooooooooo'] },
+  shark_tooth: { pal: { o: '#6b6248', W: '#f1ead6', w: '#d6ccb0', b: '#8a7a58' }, rows: [
+    '.oooooooo.', 'obbbbbbbbo', 'oWWWWWWwwo', 'oWWWWWWwo.', '.oWWWWwwo.', '.oWWWwwo..', '..oWWwo...', '..oWwo....', '...oo.....'] },
+  nautilus: { pal: { o: '#7c5a3c', N: '#f4e3cf', n: '#c8814a', w: '#fff7ec' }, rows: [
+    '...ooooo..', '..oNnNnNo.', '.oNnNnNnNo', 'oNwooNnNNo', 'oNoNoNnNno', 'oNwoooNnNo', '.oNNNnNnNo', '..oonNnNo.', '....oooo..'] },
+  cowrie: { pal: { o: '#6b3f1f', C: '#d9a066', c: '#b87333', w: '#fbe3c0', d: '#3b2110' }, rows: [
+    '..oooooo..', '.oCwCcCwo.', 'oCwCCcCCCo', 'oCcCCwCcCo', 'oCddddddCo', 'oCcCwCcCCo', '.oCCCcCCo.', '..oooooo..'] },
+  whelk: { pal: { o: '#6e5d45', W: '#c9b79c', w: '#e6dac6', d: '#94826a' }, rows: [
+    '....oo....', '...oWdo...', '...owWo...', '..oWdWo...', '..owWdWo..', '.oWdWWdo..', '.owWWdWWo.', 'oWdWWWdWo.', '.ooWwwWoo.', '...ooWo...', '.....o....'] },
+  urchin: { pal: { o: '#3b1a78', U: '#8b5cf6', u: '#6d28d9', w: '#c4b5fd' }, rows: [
+    'o..o..o..o', '.o.U..U.o.', '..oUUUUo..', 'oUUwUuUUUo', '.UuUUUUuU.', 'oUUUuUUwUo', '..oUUUUo..', '.o.U..U.o.', 'o..o..o..o'] },
+  sand_dollar: { pal: { o: '#a08f6e', D: '#efe6d2', d: '#c8b894' }, rows: [
+    '..oooooo..', '.oDDDdDDo.', 'oDDdDDdDDo', 'oDDDdDDDDo', 'oDdDddDdDo', 'oDDDDdDDDo', 'oDDdDDdDDo', '.oDDDDDDo.', '..oooooo..'] },
   pink_shell: { pal: { o: '#9d174d', P: '#f9a8d4', p: '#fdf2f8', d: '#ec4899' }, rows: [
     '....oo....', '...oPPo...', '..oPpdPo..', '.oPpPdPPo.', 'oPpPPdPPPo', 'oPPPdPPPo.', '.oPdPPPo..', '..oPPPo...', '...ooo....'] },
   scallop: { pal: { o: '#9a3412', S: '#fdba74', s: '#fb923c', w: '#ffedd5' }, rows: [
@@ -1470,17 +1488,17 @@ const ELIO_PAL = { o: '#140d0a', h: '#2a1d17', H: '#4a3427', f: '#6b5446', s: '#
   e: '#1f1a17', m: '#2a1d17', M: '#9a5a4a', E: '#e5e7eb', c: '#1c1c1f', G: '#4ade80',
   p: '#2b2f3a', P: '#1f222b', n: '#2b2b2b', w: '#e5e5e5' };
 const ELIO_ROWS = [
-    '.........oooooo.........',
-    '......oooHHhhhhooo......',
-    '....oohhhHHHhhhhhhoo....',
-    '...ohhhhhhHHHhhhhhhho...',
-    '..ohhhhhhhhHHHhhhhhhho..',
-    '..ohhhhhhhhhhHHhhhhhho..',
-    '..ohhhhhhhhhhhhhhhhhho..',
-    '..ohhhhhhhhhhhhhhhhhho..',
+    '........oooooooo........',
+    '......ooHHHhhhhhoo......',
+    '.....ohhHHHHhhhhhho.....',
+    '....ohhhhhHHHhhhhhho....',
+    '...ohhhhhhhhHHHhhhhho...',
     '...ohhhhhhhhhhhhhhhho...',
-    '....ofhhhhhhhhhhhhfo....',
-    '....ofhhhhhhhhssshfo....',
+    '...ohhHhhhhhhhhhhhhho...',
+    '...ohhhhHHhhhhhhhhhho...',
+    '...ofhhhhhhhhhhhhhhfo...',
+    '....ofsshhhhhhhhhhfo....',
+    '....ofssssshhhhhhhfo....',
     '....ofsgggssssgggsfo....',
     '...osSgLllggggLllgSso...',
     '...osS{P}Sso...',

@@ -5,7 +5,7 @@ import { MobileControls, useIsTouch, useIsLandscape } from './MobileControls';
 import { SoundManager } from '../utils/SoundManager';
 import { makeWorld, SeededRandom, SPAWN, isHouseScreen, pondNorm, FEET, riverDepth, onBridge } from '../utils/world';
 import { loadCritters, updateCritters, setCritterFlowers, setCritterView, drawCrittersWater, addGroundCritters, drawGroundCritter, drawCrittersAir, drawFireflies, nightOf, critterDebug } from '../utils/critters';
-import { drawBackground, drawHouse, drawTree, drawRock, drawFlower, drawItem, drawElio, drawElioPeek, elioHide, drawBang, drawHeart, elioPortrait } from '../utils/draw';
+import { drawBackground, sprite, drawHouse, drawTree, drawRock, drawFlower, drawItem, drawElio, drawElioPeek, elioHide, drawBang, drawHeart, elioPortrait } from '../utils/draw';
 import { newCamera, makeScene, blitCamera } from '../utils/camera';
 import {
   CANVAS_WIDTH,
@@ -275,6 +275,7 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
       player: () => ({ ...playerRef.current, screen: screenRef.current, running: runningRef.current }),
       setTime: (t: number) => { timeRef.current = t; },
       critters: critterDebug,
+      sprite,
     };
   }, [world]);
 
