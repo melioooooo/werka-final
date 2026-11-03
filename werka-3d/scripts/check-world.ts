@@ -1,6 +1,6 @@
 // Run: npm run check. Fails loudly if world generation stops being deterministic or sane.
 import assert from 'node:assert/strict';
-import { generateWorld, heightAt, blocked, inWater, riverZ, HOUSE, HALF, EDGE, SPAWN, WATER_FLOWERS, RIVER_HALF, biomeAt, type World } from '../src/world/generate.ts';
+import { generateWorld, heightAt, blocked, walkBlocked, steep, inWater, riverZ, HOUSE, HALF, EDGE, SPAWN, WATER_FLOWERS, RIVER_HALF, biomeAt, type World } from '../src/world/generate.ts';
 import { TRINKETS } from '../src/world/data.ts';
 import { spawnCritters, MAX_CRITTERS } from '../src/world/critters.ts';
 import { layoutFlowers, layoutExtras, headGap, headBottom, extrasClear, scaleHeads, FLOOR, wrapPoint } from '../src/world/bouquet-layout.ts';
@@ -37,7 +37,7 @@ const ids = new Set(TRINKETS.map(t => t.id));
 let nT = 0, nK = 0, minElio = Infinity;
 const seen = new Set<string>();
 const DATES = 200;
-let nShore = 0, nCrit = 0, nFossil = 0;
+let nShore = 0, nCrit = 0, nFossil = 0, nLedge = 0;
 const shoreOf = (w: World, x: number, z: number) => Math.abs(z - riverZ(w, x)) < RIVER_HALF + 3.2 || w.ponds.some(p => Math.hypot(p.x - x, p.z - z) < p.r + 3.6);
 for (let i = 0; i < DATES; i++) {
   const d = new Date(2026, 0, 1 + i * 3).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
@@ -47,6 +47,13 @@ for (let i = 0; i < DATES; i++) {
   const shore = w.trinkets.filter(t => shoreOf(w, t.x, t.z) && TRINKETS.find(k => k.id === t.type)!.shell).length;
   assert.ok(shore >= 2, `${d}: at least 2 shells on the shore (${shore})`);
   nShore += shore;
+  // Relief never stops the walker: if neither spot is an obstacle, the step is allowed, up or down, however steep.
+  for (let k = 0; k < 4000; k++) {
+    const x = (k * 7.31) % (2 * HALF) - HALF, z = (k * 13.77) % (2 * HALF) - HALF, a = k * 2.4, nx = x + Math.cos(a) * 0.1, nz = z + Math.sin(a) * 0.1;
+    if (blocked(w, x, z) || blocked(w, nx, nz)) continue;
+    if (steep(w, x, z, nx, nz)) nLedge++;
+    assert.ok(!walkBlocked(w, nx, nz), `${d}: relief blocks the walker at ${x.toFixed(1)},${z.toFixed(1)}`);
+  }
   const rocky = w.trinkets.filter(t => TRINKETS.find(k => k.id === t.type)!.fossil);
   assert.ok(rocky.every(t => w.rocks.some(k => Math.hypot(k.x - t.x, k.z - t.z) < k.s + 2)), `${d}: fossils beside rocks`);
   nFossil += rocky.length;
@@ -72,6 +79,7 @@ for (let i = 0; i < DATES; i++) {
   nT += w.trinkets.length; nK += w.kisses.length;
 }
 assert.equal(seen.size, TRINKETS.length, `every trinket type appears (${[...seen].join(',')})`);
+assert.ok(nLedge > 0, 'the walker check must actually meet some ledges');
 console.log(`ok: ${DATES} dates, ${nT} trinkets (${nShore} shells on shores), ${nCrit} critters, ${nK} kisses, Elio >= ${minElio.toFixed(0)} from spawn`);
 
 console.log(`ok: ${a.flowers.length} flowers (${a.flowers.filter(f => WATER_FLOWERS.has(f.type)).length} on water), ${a.ponds.length} ponds, ${a.landmarks.length} landmarks, ${a.trees.length} trees, ${a.rocks.length} rocks, biomes ${a.biomes.flat().join(' ')}`);

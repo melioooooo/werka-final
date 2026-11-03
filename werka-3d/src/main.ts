@@ -1,6 +1,6 @@
 // Game loop and state machine: menu -> intro -> outdoor <-> house -> craft -> gallery.
 import * as THREE from 'three';
-import { generateWorld, blocked, steep, walkY, SPAWN, HOUSE, HALF, EDGE } from './world/generate.ts';
+import { generateWorld, walkBlocked, steep, walkY, SPAWN, HOUSE, HALF, EDGE } from './world/generate.ts';
 import { FLOWER_COLORS, DAY_CYCLE_DURATION, MAX_INVENTORY, MAX_POCKET, POCKET_INFO, START_TIME, TRINKETS, rarityOf, timeLabel } from './world/data.ts';
 import { state, load, save, today, type Bouquet } from './state.ts';
 import { buildOutdoor } from './render/outdoor.ts';
@@ -100,6 +100,7 @@ const basketPos = new THREE.Vector3();
 let facing = 0;
 let galleryReturn: Mode = 'menu';
 let stepClock = 0;
+let ledgeHop = 0;
 
 const playing = () => mode === 'outdoor' || mode === 'house' || mode === 'talk';
 const pocketCount = () => state.pocket.filter(i => i !== 'golden_kiss').length;
@@ -298,7 +299,7 @@ function walk(dt: number, isBlocked: (x: number, z: number) => boolean, speed: n
 
 const DOOR = { x: HOUSE.door.x, z: HOUSE.door.z + 0.8 };
 const outdoorBlocked = (x: number, z: number) =>
-  blocked(world, x, z) || steep(world, pos.x, pos.z, x, z) || Math.hypot(x - elio.root.position.x, z - elio.root.position.z) < 0.9;
+  walkBlocked(world, x, z) || Math.hypot(x - elio.root.position.x, z - elio.root.position.z) < 0.9;
 type Spot = (typeof world.flowers)[number];
 type Pick = (typeof world.trinkets)[number];
 
@@ -351,7 +352,15 @@ function tickOutdoor(dt: number, time: number) {
     facing += Math.atan2(Math.sin(d), Math.cos(d)) * Math.min(1, dt * 8);
     player.root.rotation.y = facing;
     player.animate(dt, 0, time);
-  } else walk(dt, outdoorBlocked, 7, time, true);
+  } else {
+    walk(dt, outdoorBlocked, 7, time, true);
+    // A small hop over each ledge, so climbing reads as climbing.
+    const m = readMove();
+    if (Math.hypot(m.x, m.y) > 0.05 && time > ledgeHop && steep(world, pos.x, pos.z, pos.x + Math.sin(facing) * 0.1, pos.z + Math.cos(facing) * 0.1)) {
+      ledgeHop = time + 0.7;
+      player.hop();
+    }
+  }
   pos.y += (walkY(world, pos.x, pos.z) - pos.y) * Math.min(1, dt * 14);
   player.root.position.copy(pos);
   // Behind the cottage: dissolve it so Werka stays visible.

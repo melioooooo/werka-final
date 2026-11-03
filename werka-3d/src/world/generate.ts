@@ -354,6 +354,10 @@ export function steep(w: World, x0: number, z0: number, x1: number, z1: number) 
   return Math.abs(walkY(w, ax, az) - walkY(w, x0, z0)) > MAX_SLOPE;
 }
 
+// What stops Werka walking. Relief never does: a slope rule here read as invisible walls along the terraces.
+// She hops up and down the ledges instead. steep() still decides where flowers and Elio go, so a date's world stays the same.
+export const walkBlocked = (w: World, x: number, z: number) => blocked(w, x, z);
+
 // Flood fill on a 1-unit grid from the spawn point, using the walker's rules (minus trees/rocks).
 const GRID = HALF * 2 + 1;
 function reachable(w: World): Uint8Array {
