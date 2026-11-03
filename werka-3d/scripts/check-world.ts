@@ -43,9 +43,9 @@ for (let i = 0; i < DATES; i++) {
   const d = new Date(2026, 0, 1 + i * 3).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   const w = generateWorld(d), w2 = generateWorld(d);
   assert.deepEqual([w.trinkets, w.kisses, w.elio], [w2.trinkets, w2.kisses, w2.elio], `${d}: pickups deterministic`);
-  assert.ok(w.trinkets.length >= 9 && w.trinkets.length <= 13, `${d}: 9-13 trinkets (${w.trinkets.length})`);
+  assert.ok(w.trinkets.length >= 12 && w.trinkets.length <= 19, `${d}: 12-19 trinkets (${w.trinkets.length})`);
   const shore = w.trinkets.filter(t => shoreOf(w, t.x, t.z) && TRINKETS.find(k => k.id === t.type)!.shell).length;
-  assert.ok(shore >= 2, `${d}: at least 2 shells on the shore (${shore})`);
+  assert.ok(shore >= 5, `${d}: at least 5 shells on the shore (${shore})`);
   nShore += shore;
   // Relief never stops the walker: if neither spot is an obstacle, the step is allowed, up or down, however steep.
   for (let k = 0; k < 4000; k++) {

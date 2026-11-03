@@ -286,7 +286,7 @@ function placeExtras(w: World, reach: (x: number, z: number) => boolean) {
         z = riverZ(w, x) + (rng.next() < 0.5 ? -1 : 1) * (RIVER_HALF + rng.range(0.8, 2.6));
       }
       if (!free(x, z, 0.5) || onBridge(w, x, z) || taken.some(o => Math.hypot(o.x - x, o.z - z) < (o === w.elio ? 4 : 1.2))) continue;
-      if (w.trinkets.some(o => Math.hypot(o.x - x, o.z - z) < 9)) continue;
+      if (w.trinkets.some(o => Math.hypot(o.x - x, o.z - z) < 5)) continue;
       return { x, z };
     }
     return null;
@@ -309,7 +309,7 @@ function placeExtras(w: World, reach: (x: number, z: number) => boolean) {
     return list[list.length - 1];
   };
   const shells = TRINKETS.filter(t => t.shell), fossils = TRINKETS.filter(t => t.fossil), land = TRINKETS.filter(t => !t.shell && !t.fossil);
-  const nT = 9 + Math.floor(rng.next() * 5), nShore = 2 + Math.floor(rng.next() * 3), nK = 3 + Math.floor(rng.next() * 3);
+  const nShore = 6 + Math.floor(rng.next() * 4), nT = nShore + 7 + Math.floor(rng.next() * 4), nK = 3 + Math.floor(rng.next() * 3);
   const nFossil = 1 + Math.floor(rng.next() * 2);
   for (let i = 0; i < nT; i++) {
     const shore = i < nShore, rock = !shore && i < nShore + nFossil;

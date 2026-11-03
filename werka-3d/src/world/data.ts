@@ -55,7 +55,7 @@ export const timeLabel = (t: number) =>
   t < 0.2 || t > 0.85 ? 'NIGHT' : t < 0.3 ? 'DAWN' : t < 0.7 ? 'DAY' : 'DUSK';
 
 // Trinkets (spec v3 + v4, shared with 2D): pocket items found once per day, favouring some biomes.
-export const MAX_POCKET = 16;
+export const MAX_POCKET = 24;
 export const MAX_EXTRAS = 6; // pocket items a bouquet can carry
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'very_rare';
 export const RARITY_WEIGHT: Record<Rarity, number> = { common: 1, uncommon: 0.5, rare: 0.2, very_rare: 0.07 };

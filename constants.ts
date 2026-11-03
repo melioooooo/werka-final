@@ -143,7 +143,7 @@ export const HOUSE_RECT = {
 export const MAX_INVENTORY = 12;
 export const MAX_BOUQUET_SIZE = 8;
 
-export const MAX_POCKET = 16; // golden kiss does not count
+export const MAX_POCKET = 24; // golden kiss does not count
 export const MAX_EXTRAS = 6;
 export const RUN_MULT = 1.7;
 

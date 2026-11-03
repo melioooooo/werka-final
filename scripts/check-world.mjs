@@ -27,7 +27,7 @@ for (let t = 0.001; t <= 1; t += 0.001) {
 }
 
 const DATES = 150;
-let plateaus = 0, topFlowers = 0, screens = 0, withRelief = 0;
+let plateaus = 0, topFlowers = 0, screens = 0, withRelief = 0, shells = 0, leastShells = 99;
 const pickable = ({ reach, GW }, f) => {
   const gx = f.screenX * CANVAS_WIDTH + f.x, gy = f.screenY * CANVAS_HEIGHT + f.y;
   for (let dy = -40; dy <= 40; dy += 16) for (let dx = -40; dx <= 40; dx += 16) {
@@ -50,6 +50,8 @@ for (let i = 0; i < DATES; i++) {
     if (pickable(rFlat, f)) assert.ok(pickable(rHill, f), `${d} ${f.id}: relief cut this flower off`);
     if (list.some(p => reliefCell(p, f.x, f.y) === 1)) topFlowers++;
   }
+  const shellsToday = w.items.filter(it => TRINKETS[it.kind]?.shell).length;
+  shells += shellsToday; leastShells = Math.min(leastShells, shellsToday);
   for (const it of w.items) assert.ok(!w.relief[it.screenY][it.screenX].some(p => reliefCell(p, it.x, it.y) >= 2), `${d} ${it.id}: item on a cliff`);
   w.relief.forEach((row, sy) => row.forEach((list, sx) => {
     screens++;
@@ -70,3 +72,5 @@ for (let i = 0; i < DATES; i++) {
   }));
 }
 console.log(`ok: ${DATES} dates, ${plateaus} plateaus on ${withRelief}/${screens} screens, ${topFlowers} flowers on top, no flower cut off`);
+console.log(`shells per day: ${(shells / DATES).toFixed(1)} on average, ${leastShells} at least`);
+assert.ok(shells / DATES >= 5, 'enough shells');

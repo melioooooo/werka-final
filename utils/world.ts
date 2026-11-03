@@ -480,8 +480,8 @@ const placeItems = (dateSeed: string, map: Biome[][], obstacles: Obstacle[][][],
   const shells = keys.filter(k => TRINKETS[k].shell);
   const fossils = keys.filter(k => TRINKETS[k].fossil);
   const landKeys = keys.filter(k => !TRINKETS[k].shell && !TRINKETS[k].fossil);
-  const nTrinkets = 9 + Math.floor(rng.next() * 5); // 9-13
-  const nShore = 2 + Math.floor(rng.next() * 3); // 2-4 of them washed up on a shore
+  const nShore = 6 + Math.floor(rng.next() * 4); // 6-9 shells washed up on a shore
+  const nTrinkets = nShore + 7 + Math.floor(rng.next() * 4); // and 7-10 other finds
   const nFossil = 1 + Math.floor(rng.next() * 2); // 1-2 of them beside rocks
   for (let i = 0; i < nTrinkets; i++) {
     const wantRock = i >= nShore && i < nShore + nFossil;
