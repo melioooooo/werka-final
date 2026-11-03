@@ -5,9 +5,26 @@ import { rmSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 const here = fileURLToPath(new URL('.', import.meta.url));
 const out = `${here}.check-bundle.mjs`;
-await build({ stdin: { contents: `export * from '../utils/world.ts'; export * from '../constants.ts';`, resolveDir: here, loader: 'ts' }, bundle: true, format: 'esm', platform: 'node', outfile: out, logLevel: 'error' });
-const { makeWorld, computeReach, reliefCell, RELIEF_CELL, FACE_ROWS, CANVAS_WIDTH, CANVAS_HEIGHT } = await import(pathToFileURL(out).href);
+await build({ stdin: { contents: `export * from '../utils/world.ts'; export * from '../constants.ts'; export * from '../types.ts'; export * as d3 from '../werka-3d/src/world/data.ts'; export { seasonOfMonth } from '../shared/season.ts'; export { SKY_KEYS, skyAt } from '../shared/sky.ts';`, resolveDir: here, loader: 'ts' }, bundle: true, format: 'esm', platform: 'node', outfile: out, logLevel: 'error' });
+const { makeWorld, computeReach, reliefCell, RELIEF_CELL, FACE_ROWS, CANVAS_WIDTH, CANVAS_HEIGHT, TRINKETS, FlowerType, d3, seasonOfMonth, SKY_KEYS, skyAt } = await import(pathToFileURL(out).href);
 rmSync(out);
+
+// The two worlds share a save, so every id one can write must mean something to the other.
+assert.deepEqual(Object.keys(TRINKETS).sort(), d3.TRINKETS.map(t => t.id).sort(), 'same trinkets in 2D and 3D');
+for (const t of d3.TRINKETS) assert.equal(TRINKETS[t.id].rarity ?? (t.id === 'star' ? 'rare' : 'common'), t.rarity ?? (t.rare ? 'rare' : 'common'), `${t.id}: same rarity`);
+const names2d = new Set(Object.values(FlowerType));
+for (const [b, v] of Object.entries(d3.BIOME_FLOWERS)) for (const f of v.types) assert.ok(names2d.has(f), `${b}: 3D flower ${f} unknown in 2D`);
+
+assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(seasonOfMonth), ['winter', 'winter', 'spring', 'spring', 'spring', 'summer', 'summer', 'summer', 'autumn', 'autumn', 'autumn', 'winter'], 'seasons by month');
+SKY_KEYS.forEach((k, i) => { if (i) assert.ok(k.t > SKY_KEYS[i - 1].t, 'sky keys in order'); });
+// The day loops with no jump, and no step of the day changes the light abruptly.
+let prev = { ...skyAt(0), sky: [...skyAt(0).sky] };
+for (let t = 0.001; t <= 1; t += 0.001) {
+  const k = skyAt(t);
+  for (const c of [0, 1, 2]) assert.ok(Math.abs(k.sky[c] - prev.sky[c]) < 12, `sky jumps at t=${t.toFixed(3)}`);
+  assert.ok(Math.abs(k.sunI - prev.sunI) < 0.1, `sun jumps at t=${t.toFixed(3)}`);
+  prev = { ...k, sky: [...k.sky] };
+}
 
 const DATES = 150;
 let plateaus = 0, topFlowers = 0, screens = 0, withRelief = 0;

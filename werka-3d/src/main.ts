@@ -20,6 +20,7 @@ import { initInput, readMove, consumeAction, running, input } from './input/inpu
 import { startAudio, ambience, sfx, isMuted, toggleMute } from './audio.ts';
 import * as ui from './ui/ui.ts';
 import { jumpTo, readJump } from '../../shared/jump.ts';
+import { currentSeason } from '../../shared/season.ts';
 import { resetAll } from '../../shared/save.ts';
 
 type Mode = 'menu' | 'intro' | 'outdoor' | 'talk' | 'house' | 'craft' | 'arrange' | 'gallery' | 'wardrobe';
@@ -56,6 +57,8 @@ const critters = buildCritters(world, spawnCritters(world), sfx);
 outdoor.scene.add(pickups.group, elio.root, critters.group);
 for (const id of state.picked) { outdoor.hideFlower(id); pickups.hide(id); }
 
+const season = currentSeason();
+const seasonLabel = `${season[0].toUpperCase()}${season.slice(1)} · `;
 let mode: Mode = 'menu';
 const resize = () => {
   const w = innerWidth, h = innerHeight;
@@ -115,7 +118,7 @@ const refreshBasket = () => {
   player.setBasket(state.inventory.map(i => i.color));
   ui.setHud(playing() ? state.inventory : null);
   ui.setPocket(state.pocket, state.kissesTotal, pickupIcon);
-  ui.setTime(timeLabel(dayT));
+  ui.setTime(seasonLabel + timeLabel(dayT));
   showTreasures();
 };
 
@@ -419,7 +422,7 @@ function tickOutdoor(dt: number, time: number) {
   outdoor.fx.update(dt, basketPos);
 
   dayT = (dayT + (dt * 1000) / DAY_CYCLE_DURATION) % 1;
-  ui.setTime(timeLabel(dayT));
+  ui.setTime(seasonLabel + timeLabel(dayT));
   ({ day, golden } = outdoor.setTime(dayT, pos, time));
   // While talking, frame Werka and Elio together.
   // Closer, and aimed a little below them so the speech box doesn't cover the pair.

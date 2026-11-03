@@ -7,7 +7,7 @@ import { makeWorld, SeededRandom, SPAWN, isHouseScreen, pondNorm, FEET, riverDep
 import { skyAt } from '../shared/sky';
 import { jumpTo } from '../shared/jump';
 import { loadCritters, updateCritters, setCritterFlowers, setCritterView, drawCrittersWater, addGroundCritters, drawGroundCritter, drawCrittersAir, drawFireflies, nightOf, critterDebug } from '../utils/critters';
-import { drawBackground, drawRelief, seasonGround, drawSeasonFx, sprite, drawHouse, drawTree, drawRock, drawFlower, drawItem, drawElio, drawElioPeek, elioHide, drawBang, drawHeart, elioPortrait } from '../utils/draw';
+import { SEASON, drawBackground, drawRelief, seasonGround, drawSeasonFx, sprite, drawHouse, drawTree, drawRock, drawFlower, drawItem, drawElio, drawElioPeek, elioHide, drawBang, drawHeart, elioPortrait } from '../utils/draw';
 import { newCamera, makeScene, blitCamera } from '../utils/camera';
 import {
   CANVAS_WIDTH,
@@ -961,7 +961,7 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
   };
 
   const hud = (layout: 'desktop' | 'strip' | 'side') =>
-    <InventoryHUD inventory={inventory} pocket={pocket} kisses={kisses} timeLabel={timeLabel} layout={layout} />;
+    <InventoryHUD inventory={inventory} pocket={pocket} kisses={kisses} timeLabel={`${SEASON.toUpperCase()} · ${timeLabel}`} layout={layout} />;
   const promptText = interactionPrompt && touch ? interactionPrompt.replace('Press E to ', '') : interactionPrompt;
   const line = talk ? talk.lines[talk.i] : '';
 

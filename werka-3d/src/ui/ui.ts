@@ -124,7 +124,7 @@ let lastTime = '';
 export function setTime(label: string) {
   if (label === lastTime) return;
   lastTime = label;
-  const night = label === 'NIGHT' || label === 'DUSK';
+  const night = label.endsWith('NIGHT') || label.endsWith('DUSK');
   $(hud, '.time').innerHTML = `${night ? MOON : SUN}<span>${label[0] + label.slice(1).toLowerCase()}</span>`;
 }
 
