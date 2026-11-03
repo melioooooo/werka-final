@@ -78,6 +78,7 @@ function applyQuality(q: Quality) {
   post.setEnabled(p.post, p.bloom);
   outdoor.setQuality(p.shadow, p.grass);
   (outdoor.particles.material as THREE.ShaderMaterial).uniforms.uPx.value = PR;
+  if (outdoor.fall) (outdoor.fall.material as THREE.ShaderMaterial).uniforms.uPx.value = PR;
   resize();
 }
 applyQuality(quality);
@@ -426,10 +427,10 @@ renderer.setAnimationLoop(now => {
   U.uTime.value = time;
   post.grade.uniforms.uTime.value = time;
   const outside = mode === 'outdoor' || mode === 'talk' || mode === 'menu';
-  post.grade.uniforms.uRays.value = outside ? day * (0.7 + golden) : 0;
+  post.grade.uniforms.uRays.value = outside ? day * (0.7 + golden * 0.25) : 0;
   post.grade.uniforms.uHigh.value.set('#ffe2b0').lerp(tmpGold, golden * 0.8);
   post.grade.uniforms.uTilt.value = outside ? 1 : 0;
-  renderer.toneMappingExposure = 1.05 + (outside ? golden * 0.45 : 0);
+  renderer.toneMappingExposure = 1.05 + (outside ? golden * 0.2 : 0);
   // Quality probe: average 60 frames (after 30 warm-up) on the title screen at 'med'.
   if (probe >= 0 && mode === 'menu') {
     probe++;

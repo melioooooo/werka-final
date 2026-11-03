@@ -8,6 +8,8 @@ import {
   biomeWeights, biomeAt, heightAt, riverZ, segDist,
 } from '../world/generate.ts';
 import { buildProps, decorInstances } from './props.ts';
+import { skyAt } from '../../../shared/sky.ts';
+import { currentSeason, type Season } from '../../../shared/season.ts';
 import { toon, outline, addOutlines, gradient, bakeColors, U, MIST_GLSL } from './toon.ts';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { flowerGeometry } from './flowers.ts';
@@ -133,7 +135,7 @@ function terrain(w: World) {
   const segs: [number, number, number][] = [[-HALF - OUT, -HALF, OUT / 4]];
   for (let a = -HALF; a < HALF; a += 60) segs.push([a, a + 60, 60]);
   segs.push([HALF, HALF + OUT, OUT / 4]);
-  const mat = toon({ vertexColors: true, rim: 0.12 });
+  const mat = toon({ vertexColors: true, rim: 0.12, season: 0.6 });
   const acc = new THREE.Color();
   const tiles: THREE.Mesh[] = [];
   for (const [x0, x1, nx] of segs) for (const [z0, z1, nz] of segs) {
@@ -188,7 +190,7 @@ function water(w: World) {
   g.setIndex(idx);
   const mat = new THREE.ShaderMaterial({
     transparent: true, fog: true,
-    uniforms: { ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog), ...U, uTimeF: U.uTime, uDay: { value: 1 }, uSky: { value: new THREE.Color('#bfe3ef') } },
+    uniforms: { ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog), ...U, uTimeF: U.uTime, uDay: { value: 1 }, uStars: { value: 0 }, uSky: { value: new THREE.Color('#bfe3ef') } },
     vertexShader: /* glsl */ `
       #include <fog_pars_vertex>
       varying vec2 vUv; varying vec3 vW;
@@ -203,7 +205,7 @@ function water(w: World) {
     fragmentShader: /* glsl */ `
       #include <fog_pars_fragment>
       ${MIST_GLSL}
-      uniform float uTime; uniform float uDay; uniform vec3 uSky; uniform vec3 uRim;
+      uniform float uTime; uniform float uDay; uniform float uStars; uniform vec4 uSeason; uniform vec3 uSky; uniform vec3 uRim;
       varying vec2 vUv; varying vec3 vW;
       void main() {
         float d = abs(vUv.y);
@@ -219,7 +221,12 @@ function water(w: World) {
         float foam = smoothstep(4.5, 4.65, edge) * (1.0 - smoothstep(5.05, 5.35, edge));
         foam = max(foam, smoothstep(4.05, 4.12, edge) * (1.0 - smoothstep(4.12, 4.22, edge)) * 0.6);
         c = mix(c, vec3(0.88, 0.95, 0.96), foam);
+        c = mix(c, vec3(0.7, 0.85, 0.92), uSeason.y * 0.32); // winter: paler, icy water
         c *= mix(0.35, 1.0, uDay);
+        // Stars mirrored on the water at night.
+        vec2 sg = vW.xz * 1.6, sf = floor(sg);
+        float sh = fract(sin(dot(sf, vec2(12.9898, 78.233))) * 43758.5453);
+        c += vec3(0.85, 0.9, 1.0) * step(0.955, sh) * smoothstep(0.32, 0.0, length(fract(sg) - 0.5)) * (0.5 + 0.5 * sin(uTime * 2.0 + sh * 60.0)) * uStars * 1.5;
         c *= 1.0 - cloudShade(vW.xz) * 0.3;
         gl_FragColor = vec4(c, mix(0.84, 0.96, foam));
         #include <fog_fragment>
@@ -277,7 +284,7 @@ function house() {
   const pitch = 0.5, ridgeY = 7.3, slope = front + 1.6, rows = 7, tileW = 0.86; // shallow enough that the high camera sees the back slope
   const tileL = slope / rows + 0.32, tile = new THREE.BoxGeometry(tileW - 0.05, 0.13, tileL);
   const roofRng = new SeededRandom('roof');
-  const roofMat = toon({ vertexColors: true, occlude: true, cut: true });
+  const roofMat = toon({ vertexColors: true, occlude: true, cut: true, snow: true });
   const tileGeos: THREE.BufferGeometry[] = [];
   const base = new THREE.Color('#b5563c'), tc = new THREE.Color();
   for (const sd of [-1, 1]) for (let r = 0; r < rows; r++) {
@@ -373,8 +380,8 @@ function trees(w: World, rng: SeededRandom) {
   const trunkMeshes = chunked(new THREE.CylinderGeometry(0.15, 0.26, 1, 6).translate(0, 0.5, 0), toon({ occlude: true }), trunks, true, 80);
   return [
     ...trunkMeshes, ...trunkMeshes.map(m => hullOf(m, 0.05, true)),
-    ...chunked(crownGeo(), toon({ vertexColors: true, sway: 0.05, occlude: true, rim: 0.5 }), round, true, 80),
-    ...chunked(pineGeo, toon({ vertexColors: true, sway: 0.03, occlude: true, rim: 0.45 }), pine, true, 80),
+    ...chunked(crownGeo(), toon({ vertexColors: true, sway: 0.05, occlude: true, rim: 0.5, season: 1, snow: true }), round, true, 80),
+    ...chunked(pineGeo, toon({ vertexColors: true, sway: 0.03, occlude: true, rim: 0.45, season: 0.3, snow: true }), pine, true, 80),
     ...farTrees(w),
   ];
 }
@@ -410,7 +417,7 @@ function farTrees(w: World) {
     const c = tmpC.set(FOLIAGE[b] ?? '#4c9a3c').offsetHSL(rng.range(-0.02, 0.02), 0, rng.range(-0.06, 0.04));
     (b === 'TUNDRA' || b === 'MOUNTAIN' ? pine : round).push(inst(jx, landHeight(w, jx, jz) - 0.2, jz, s, s * rng.range(0.9, 1.2), s, rng.range(0, 6), c));
   }
-  const mat = toon({ vertexColors: true, sway: 0.03, rim: 0.4 });
+  const mat = toon({ vertexColors: true, sway: 0.03, rim: 0.4, season: 0.85, snow: true });
   return [...chunked(roundGeo, mat, round), ...chunked(pineGeo, mat, pine)];
 }
 
@@ -429,7 +436,7 @@ function rockGeo(seed: number, tall = 1, detail = 1) {
 }
 
 function rocks(w: World, rng: SeededRandom) {
-  const mesh = new THREE.InstancedMesh(rockGeo(1.7), toon({ vertexColors: true, occlude: true, rim: 0.3 }), Math.max(1, w.rocks.length));
+  const mesh = new THREE.InstancedMesh(rockGeo(1.7), toon({ vertexColors: true, occlude: true, rim: 0.3, snow: true }), Math.max(1, w.rocks.length));
   w.rocks.forEach((r, i) => {
     place(mesh, i, r.x, heightAt(w, r.x, r.z) + 0.12 * r.s, r.z, r.s, 0.85 * r.s, 0.9 * r.s, rng.range(0, 6));
     const b = biomeAt(w, r.x, r.z);
@@ -483,7 +490,7 @@ function grass(w: World, rng: SeededRandom) {
     list.push(inst(x, h, z, s, s * rng.range(0.8, 1.5), s, rng.range(0, 6), groundColor(w, x, z, tmpC).offsetHSL(rng.range(-0.015, 0.02), 0, rng.range(-0.05, 0.06))));
     n++;
   }
-  return chunked(geo, toon({ vertexColors: true, sway: 0.9, rim: 0.2, side: THREE.DoubleSide }), list);
+  return chunked(geo, toon({ vertexColors: true, sway: 0.9, rim: 0.2, side: THREE.DoubleSide, season: 0.6 }), list);
 }
 let clumpX = 0, clumpZ = 0;
 
@@ -500,7 +507,7 @@ function ledges(w: World, rng: SeededRandom) {
     const c = tmpC.set(b === 'TUNDRA' ? '#aab4ba' : b === 'ENCHANTED' ? '#8c84a8' : b === 'DESERT' ? '#c4976a' : '#968b7e').offsetHSL(0, 0, rng.range(-0.07, 0.05));
     list.push(inst(jx, heightAt(w, jx, jz) - 0.55, jz, s * 1.25, s * rng.range(1.1, 1.6), s * 0.8, Math.atan2(gx, gz) + rng.range(-0.3, 0.3), c));
   }
-  return chunked(rockGeo(4.2, 1.2, 0), toon({ vertexColors: true, occlude: true, rim: 0.3 }), list, true);
+  return chunked(rockGeo(4.2, 1.2, 0), toon({ vertexColors: true, occlude: true, rim: 0.3, snow: true }), list, true);
 }
 
 // Desert cacti (decoration only, flowerless so they don't read as pickable).
@@ -565,7 +572,7 @@ function bushes(w: World, rng: SeededRandom) {
   }
   const bushGeo = gradient(mergeGeometries([[0, 0, 0, 1], [0.55, 0.15, 0.2, 0.7], [-0.5, 0.1, -0.25, 0.65]]
     .map(([x, y, z, r]) => new THREE.IcosahedronGeometry(r, 1).translate(x, y, z)))!, 0.55, 1.2, false);
-  return chunked(bushGeo, toon({ vertexColors: true, sway: 0.04, occlude: true, rim: 0.45 }), list, true);
+  return chunked(bushGeo, toon({ vertexColors: true, sway: 0.04, occlude: true, rim: 0.45, season: 1, snow: true }), list, true);
 }
 
 // All flowers in one BatchedMesh: one draw call (plus shadow) for every type on the map.
@@ -715,18 +722,52 @@ function pickupFx(scene: THREE.Scene) {
   return { highlight, pick, update };
 }
 
-// Sky colour keyframes over the 0..1 day.
-const SKY: [number, string][] = [
-  [0, '#141b36'], [0.2, '#26325e'], [0.25, '#f2b08e'], [0.32, '#bfe3ef'], [0.64, '#bfe3ef'],
-  [0.72, '#ffc58e'], [0.78, '#f08a7a'], [0.86, '#2b2d58'], [1, '#141b36'],
-];
-const skyAt = (t: number, out: THREE.Color) => {
-  for (let i = 0; i < SKY.length - 1; i++) {
-    const [t0, a] = SKY[i], [t1, b] = SKY[i + 1];
-    if (t <= t1) return out.set(a).lerp(tmpB.set(b), (t - t0) / (t1 - t0));
-  }
-  return out.set(SKY[0][1]);
-};
+const rgb = (o: THREE.Color, c: number[]) => o.setRGB(c[0] / 255, c[1] / 255, c[2] / 255, THREE.SRGBColorSpace);
+
+// Falling season particles around Werka: snow, leaves or petals. GPU-animated, one draw call.
+function seasonFx(season: Season) {
+  const N = season === 'winter' ? 520 : 240;
+  const seed = new Float32Array(N * 4);
+  const rng = new SeededRandom('season-fx');
+  for (let i = 0; i < N * 4; i++) seed[i] = rng.next();
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3));
+  g.setAttribute('seed', new THREE.BufferAttribute(seed, 4));
+  const snow = season === 'winter';
+  const mat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false,
+    uniforms: { uTime: U.uTime, uPlayer: U.uPlayer, uPx: { value: 1 }, uDim: { value: 1 } },
+    vertexShader: /* glsl */ `
+      attribute vec4 seed; uniform float uTime; uniform vec3 uPlayer; uniform float uPx;
+      varying vec3 vC; varying float vSpin;
+      void main() {
+        float fall = ${snow ? '1.3' : '0.9'} * (0.7 + seed.x * 0.6);
+        vec3 p = vec3(seed.x * 52.0, 0.0, seed.z * 52.0);
+        p.y = mod(seed.y * 16.0 - uTime * fall, 16.0);
+        p.x += sin(uTime * (0.5 + seed.w) + seed.y * 20.0) * 1.2 + uTime * 0.5;
+        p.z += cos(uTime * (0.4 + seed.x) + seed.w * 20.0) * 1.2;
+        p.xz = uPlayer.xz + mod(p.xz - uPlayer.xz + 26.0, 52.0) - 26.0;
+        p.y += uPlayer.y;
+        vec4 mv = viewMatrix * vec4(p, 1.0);
+        gl_Position = projectionMatrix * mv;
+        vC = ${season === 'autumn' ? 'mix(vec3(0.85, 0.4, 0.1), vec3(0.72, 0.16, 0.08), seed.w)' : season === 'spring' ? 'mix(vec3(0.99, 0.8, 0.88), vec3(1.0, 0.95, 0.97), seed.w)' : 'vec3(1.0)'};
+        vSpin = uTime * (1.0 + seed.z * 2.0) + seed.y * 30.0;
+        gl_PointSize = ${snow ? '3.4' : '6.0'} * (0.7 + seed.w * 0.6) * uPx * (80.0 / -mv.z);
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform float uDim; varying vec3 vC; varying float vSpin;
+      void main() {
+        vec2 q = gl_PointCoord - 0.5;
+        ${snow ? '' : 'float c = cos(vSpin), s = sin(vSpin); q = vec2(q.x * c - q.y * s, (q.x * s + q.y * c) * 2.4);'}
+        if (dot(q, q) > 0.25) discard;
+        gl_FragColor = vec4(vC * uDim, ${snow ? '0.9' : '1.0'});
+        #include <colorspace_fragment>
+      }`,
+  });
+  const pts = new THREE.Points(g, mat);
+  pts.frustumCulled = false;
+  return pts;
+}
 
 export type Outdoor = ReturnType<typeof buildOutdoor>;
 
@@ -762,8 +803,12 @@ export function buildOutdoor(w: World) {
   scene.add(...terrain(w), water0, bridge(w), houseGrp, ...trees(w, rng), ...rocks(w, rng), stones(w, rng), ...grassMeshes, ...sprinkleMeshes,
     ...bushes(w, rng), ...cacti(w, rng), ...ledges(w, rng), ...decorInstances(w, rng, busy), ...fl.meshes, parts);
   // Edge mist + cloud shadows only while this scene renders (the interior shares the materials).
-  scene.onBeforeRender = () => { U.uEdge.value = HALF; U.uCloud.value = cloud; };
-  scene.onAfterRender = () => { U.uEdge.value = 1e5; U.uCloud.value = 0; };
+  const season = currentSeason();
+  const seasonAmt = [season === 'autumn' ? 1 : 0, season === 'winter' ? 1 : 0, season === 'spring' ? 1 : 0, 0] as const;
+  const fall = season === 'summer' ? null : seasonFx(season); // summer keeps only the rising pollen
+  if (fall) scene.add(fall);
+  scene.onBeforeRender = () => { U.uEdge.value = HALF; U.uCloud.value = cloud; U.uSeason.value.set(...seasonAmt); };
+  scene.onAfterRender = () => { U.uEdge.value = 1e5; U.uCloud.value = 0; U.uSeason.value.set(0, 0, 0, 0); };
   let cloud = 0;
   const props = buildProps(w, scene);
   const fx = pickupFx(scene);
@@ -773,44 +818,44 @@ export function buildOutdoor(w: World) {
   let lastBiome: Biome = 'GRASS';
   const light = { day: 1, golden: 0 };
   const setTime = (t: number, focus: THREE.Vector3, time = 0) => {
-    skyAt(t, skyCol);
+    const k = skyAt(t), day = k.day, golden = k.golden;
+    rgb(skyCol, k.sky);
     const ang = (t - 0.25) * Math.PI * 2; // sunrise at t=0.25, noon at 0.5
     const elev = Math.sin(ang);
-    const day = Math.max(0, Math.min(1, elev * 3 + 0.3));
-    const golden = day * Math.max(0, 1 - Math.abs(elev - 0.12) * 3.5); // low sun, still up
     // Fog/sky: time of day tinted by the biome Werka stands in.
     const cx = Math.round(focus.x / 4), cz = Math.round(focus.z / 4);
     if (cx !== lastCell.x || cz !== lastCell.z) { lastCell.x = cx; lastCell.z = cz; lastBiome = biomeAt(w, focus.x, focus.z); }
     mist.set(MIST[lastBiome]);
     skyCol.lerp(mist, 0.45 * day);
+    if (season === 'winter') skyCol.lerp(tmpB.set('#e4ecf4'), 0.3 * day);
     (scene.background as THREE.Color).copy(skyCol);
     scene.fog!.color.lerp(skyCol, 0.08); // ease between biomes
     // Edge mist: the fog colour, a touch paler by day so the world evaporates into light.
     U.uMist.value.copy(scene.fog!.color).lerp(tmpB.set('#ffffff'), 0.18 * day);
     (water0.material as THREE.ShaderMaterial).uniforms.uSky.value.copy(skyCol);
     cloud = 0.9 * day;
-    const dir = elev > -0.05 ? 1 : -1;
     // Keep the sun low-ish and to the side so shadows are long and readable from above.
     // Snap the shadow camera to whole shadow-map texels (in light space) so shadows don't shimmer as Werka walks.
-    sunOff.set(Math.cos(ang) * 40 * dir - 14, 30 + Math.abs(elev) * 30, 26);
+    sunOff.set(Math.cos(ang) * 40 - 14, 30 + Math.abs(elev) * 30, 26); // continuous through dusk: the shadows never jump
     snapQ.setFromRotationMatrix(snapM.lookAt(sunOff, ZERO, UP)).invert();
     const texel = (sun.shadow.camera.right - sun.shadow.camera.left) / sun.shadow.mapSize.x;
     snapV.copy(focus).applyQuaternion(snapQ);
     snapV.set(Math.round(snapV.x / texel) * texel, Math.round(snapV.y / texel) * texel, snapV.z).applyQuaternion(snapQ.invert());
     sun.target.position.copy(snapV);
     sun.position.copy(snapV).add(sunOff);
-    if (day > 0) sun.color.set('#ff8a4a').lerp(tmpB.set('#fff0d0'), Math.min(1, Math.max(0, elev * 2.4)));
-    else sun.color.set('#8fa6ff');
-    sun.intensity = day > 0 ? 0.9 + 1.6 * day + golden * 0.6 : 0.8;
-    hemi.intensity = 0.75 + 0.55 * day + golden * 0.35; // moonlit nights stay readable
-    hemi.color.set('#9cc8ff').lerp(tmpB.set('#ffb98a'), golden * 0.55).lerp(tmpB.set('#5a6aa8'), 1 - day);
-    hemi.groundColor.set(day > 0.3 ? '#2f5f78' : '#1a2140');
-    glass.emissiveIntensity = 1.6 * (1 - day) + golden * 0.6;
-    props.setNight(1 - day);
+    rgb(sun.color, k.sun);
+    sun.intensity = k.sunI;
+    hemi.intensity = k.hemiI;
+    rgb(hemi.color, k.hemi);
+    rgb(hemi.groundColor, k.ground);
+    glass.emissiveIntensity = 1.6 * k.lights + golden * 0.4;
+    props.setNight(k.lights);
+    if (fall) (fall.material as THREE.ShaderMaterial).uniforms.uDim.value = 0.45 + 0.55 * day;
     props.update(time);
     (parts.material as THREE.ShaderMaterial).uniforms.uNight.value = 1 - day;
     (water0.material as THREE.ShaderMaterial).uniforms.uDay.value = 0.35 + 0.65 * day;
-    U.uRim.value.set(day > 0.3 ? '#ffe7b8' : '#8fa6ff').lerp(tmpB.set('#ff9a5c'), golden * 0.7);
+    (water0.material as THREE.ShaderMaterial).uniforms.uStars.value = k.stars;
+    rgb(U.uRim.value, k.rim);
     light.day = day; light.golden = golden;
     return light;
   };
@@ -825,7 +870,8 @@ export function buildOutdoor(w: World) {
       sun.shadow.map = null;
     }
     for (const [m, n] of counts) m.count = Math.floor(n * grassK);
+    if (fall) fall.geometry.setDrawRange(0, Math.floor(fall.geometry.attributes.position.count * grassK));
   };
 
-  return { scene, setTime, setQuality, hideFlower: fl.hide, flowerPose: fl.pose, fx, particles: parts, sun };
+  return { scene, setTime, setQuality, hideFlower: fl.hide, flowerPose: fl.pose, fx, particles: parts, fall, sun };
 }

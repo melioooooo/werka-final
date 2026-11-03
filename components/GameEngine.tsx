@@ -4,8 +4,9 @@ import { InventoryHUD } from './InventoryHUD';
 import { MobileControls, useIsTouch, useIsLandscape } from './MobileControls';
 import { SoundManager } from '../utils/SoundManager';
 import { makeWorld, SeededRandom, SPAWN, isHouseScreen, pondNorm, FEET, riverDepth, onBridge } from '../utils/world';
+import { skyAt } from '../shared/sky';
 import { loadCritters, updateCritters, setCritterFlowers, setCritterView, drawCrittersWater, addGroundCritters, drawGroundCritter, drawCrittersAir, drawFireflies, nightOf, critterDebug } from '../utils/critters';
-import { drawBackground, sprite, drawHouse, drawTree, drawRock, drawFlower, drawItem, drawElio, drawElioPeek, elioHide, drawBang, drawHeart, elioPortrait } from '../utils/draw';
+import { drawBackground, seasonGround, drawSeasonFx, sprite, drawHouse, drawTree, drawRock, drawFlower, drawItem, drawElio, drawElioPeek, elioHide, drawBang, drawHeart, elioPortrait } from '../utils/draw';
 import { newCamera, makeScene, blitCamera } from '../utils/camera';
 import {
   CANVAS_WIDTH,
@@ -87,6 +88,22 @@ const getVignette = () => {
   return vignette;
 };
 
+// Warm light pool: radial falloff baked once, added with 'lighter'.
+let lightPool: HTMLCanvasElement | null = null;
+const getLightPool = () => {
+  if (lightPool) return lightPool;
+  lightPool = document.createElement('canvas');
+  lightPool.width = lightPool.height = 128;
+  const c = lightPool.getContext('2d')!;
+  const g = c.createRadialGradient(64, 64, 4, 64, 64, 64);
+  g.addColorStop(0, 'rgba(255,190,110,0.5)');
+  g.addColorStop(0.5, 'rgba(255,160,80,0.16)');
+  g.addColorStop(1, 'rgba(255,140,60,0)');
+  c.fillStyle = g;
+  c.fillRect(0, 0, 128, 128);
+  return lightPool;
+};
+
 // Cloud shadow: three soft overlapping blobs, baked once and blitted faintly.
 let cloud: HTMLCanvasElement | null = null;
 const getCloud = () => {
@@ -121,6 +138,7 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
   const touch = useIsTouch();
   const landscape = useIsLandscape();
   const backgroundCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const starsRef = useRef<number[]>([]);
 
   const world = useMemo(() => makeWorld(dateSeed), [dateSeed]);
   const [picked] = useState(() => loadPicked(dateSeed));
@@ -670,17 +688,24 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
       backgroundCanvasRef.current.width = CANVAS_WIDTH;
       backgroundCanvasRef.current.height = CANVAS_HEIGHT;
     }
-    const bgCtx = backgroundCanvasRef.current.getContext('2d');
+    const bgCtx = backgroundCanvasRef.current.getContext('2d', { willReadFrequently: true });
     if (!bgCtx) return;
     const { x, y } = currentScreen;
     drawBackground(bgCtx, world.map[y]?.[x] || Biome.GRASS, dateSeed, x, y, isHouseScreen(x, y), world.riverY, world.bridgeX,
       world.flowers.filter(f => f.screenX === x && f.screenY === y), world.ponds[y][x]);
+    seasonGround(bgCtx, world.map[y]?.[x] || Biome.GRASS, dateSeed, x, y);
+    // Stars mirrored on the water at night: fixed points for this screen, twinkled in drawDayNightCycle.
+    const rng = new SeededRandom(`${dateSeed}-${x}-${y}-stars`), pts: number[] = [];
+    const river = world.map[y]?.[x] === Biome.RIVER;
+    for (let i = 0; i < 700 && pts.length < 120; i++) {
+      const px = rng.range(0, CANVAS_WIDTH), py = rng.range(0, CANVAS_HEIGHT);
+      const inRiver = river && Math.abs(py - world.riverY(x * CANVAS_WIDTH + px)) < 34 && Math.abs(px - world.bridgeX(x, y)) > 60;
+      if (inRiver || world.ponds[y][x].some(p => pondNorm(p, px, py) < 0.7)) pts.push(px | 0, py | 0);
+    }
+    starsRef.current = pts;
   }, [currentScreen, dateSeed, world]);
 
   // --- DRAWING ---
-  let overlayKey = -1;
-  let overlayStyle = '';
-
   const draw = () => {
     if (!ctxRef.current) ctxRef.current = canvasRef.current?.getContext('2d') ?? null;
     const view = ctxRef.current;
@@ -730,8 +755,9 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
 
     drawCrittersAir(ctx, now);
     drawParticles(ctx, now);
+    drawSeasonFx(ctx, now);
     drawClouds(ctx, now);
-    drawDayNightCycle(ctx);
+    drawDayNightCycle(ctx, now);
     drawFireflies(ctx, now, nightOf(time));
     if (touch) blitCamera(view, sceneRef.current!, camRef.current, player.x, player.y - 30, now);
   };
@@ -870,7 +896,7 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
   const drawClouds = (ctx: CanvasRenderingContext2D, now: number) => {
     const t = now / 20000; // Slow drift
     const img = getCloud();
-    ctx.globalAlpha = 0.2;
+    ctx.globalAlpha = 0.2 * skyAt(timeRef.current).day;
     for (let i = 0; i < 3; i++) {
       const x = ((t * (50 + i * 20)) + i * 340) % (CANVAS_WIDTH + 400) - 200;
       const y = (i * 260 + 60 + Math.sin(t) * 50) % CANVAS_HEIGHT;
@@ -879,46 +905,41 @@ export const GameEngine: React.FC<GameEngineProps> = ({ onEnterHouse, onInventor
     ctx.globalAlpha = 1;
   };
 
-  const drawDayNightCycle = (ctx: CanvasRenderingContext2D) => {
-    const t = timeRef.current;
-    let r = 0, g = 0, b = 0, a = 0;
-
-    if (t < 0.2) {
-      r = 15; g = 23; b = 42; a = 0.7;
-    } else if (t < 0.25) {
-      const progress = (t - 0.2) / 0.05;
-      r = 15 + (253 - 15) * progress;
-      g = 23 + (186 - 23) * progress;
-      b = 42 + (116 - 42) * progress;
-      a = 0.7 - 0.4 * progress;
-    } else if (t < 0.35) {
-      const progress = (t - 0.25) / 0.1;
-      r = 253; g = 186; b = 116;
-      a = 0.3 - 0.3 * progress;
-    } else if (t < 0.7) {
-      a = 0;
-    } else if (t < 0.85) {
-      const progress = (t - 0.7) / 0.15;
-      r = 253; g = 160; b = 80;
-      a = 0.0 + 0.5 * progress;
-    } else {
-      const progress = (t - 0.85) / 0.15;
-      r = 253 + (15 - 253) * progress;
-      g = 160 + (23 - 160) * progress;
-      b = 80 + (42 - 80) * progress;
-      a = 0.5 + 0.2 * progress;
-    }
-
-    if (a > 0) {
-      // only build a new colour string when the tint actually changes
-      const key = ((Math.floor(r) * 256 + Math.floor(g)) * 256 + Math.floor(b)) * 1000 + Math.round(a * 1000);
-      if (key !== overlayKey) { overlayKey = key; overlayStyle = `rgba(${Math.floor(r)}, ${Math.floor(g)}, ${Math.floor(b)}, ${Math.round(a * 1000) / 1000})`; }
-      ctx.fillStyle = overlayStyle;
+  const drawDayNightCycle = (ctx: CanvasRenderingContext2D, now: number) => {
+    const k = skyAt(timeRef.current), player = playerRef.current;
+    const rgb = (c: number[]) => `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
+    if (k.mul[0] + k.mul[1] + k.mul[2] < 760) {
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.fillStyle = rgb(k.mul);
       ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     }
-
+    ctx.globalCompositeOperation = 'lighter';
+    if (k.glowA > 0.005) {
+      ctx.globalAlpha = k.glowA;
+      ctx.fillStyle = rgb(k.glow);
+      ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    }
+    if (k.lights > 0.02) {
+      // Warm pool around Werka and, on the home screen, spilling out of the windows.
+      const halo = getLightPool();
+      ctx.globalAlpha = 0.4 * k.lights;
+      ctx.drawImage(halo, player.x - 130, player.y - 150, 260, 260);
+      if (isHouseScreen(screenRef.current.x, screenRef.current.y)) {
+        ctx.globalAlpha = 0.55 * k.lights;
+        ctx.drawImage(halo, HOUSE_RECT.x + HOUSE_RECT.width / 2 - 190, HOUSE_RECT.y + HOUSE_RECT.height - 150, 380, 300);
+      }
+    }
+    if (k.stars > 0.02) {
+      ctx.fillStyle = '#eaf2ff';
+      const pts = starsRef.current;
+      for (let i = 0; i < pts.length; i += 2) {
+        ctx.globalAlpha = k.stars * (0.35 + 0.65 * Math.abs(Math.sin(now / 900 + i)));
+        ctx.fillRect(pts[i], pts[i + 1], i % 8 ? 1 : 2, i % 8 ? 1 : 2);
+      }
+    }
+    ctx.globalCompositeOperation = 'source-over';
     // Vignette, stronger at night
-    ctx.globalAlpha = 0.3 + a * 0.5;
+    ctx.globalAlpha = 0.28 + (1 - k.day) * 0.3;
     ctx.drawImage(getVignette(), 0, 0);
     ctx.globalAlpha = 1;
   };

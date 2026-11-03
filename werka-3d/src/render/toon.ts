@@ -15,6 +15,7 @@ export const U = {
   uMist: { value: new THREE.Color('#bfe3ef') }, // colour the world dissolves into past the map edge
   uEdge: { value: 1e5 }, // half size of the playable square (huge = no edge mist, e.g. indoors)
   uCloud: { value: 0 }, // 0..1 strength of drifting cloud shadows (outdoor scene only)
+  uSeason: { value: new THREE.Vector4() }, // autumn, winter, spring strengths (outdoor scene only)
 };
 
 // World-space mist past the map edge + cloud shadows. Shared with custom shaders (water).
@@ -47,6 +48,8 @@ type ToonOpts = THREE.MeshToonMaterialParameters & {
   occlude?: boolean; // dither away when between camera and player
   cut?: boolean; // also obeys U.uCut (house)
   rim?: number;
+  season?: number; // how much green parts follow the season (0 = never)
+  snow?: boolean; // upward faces whiten in winter
 };
 
 const VERT_HEAD = /* glsl */ `
@@ -54,7 +57,7 @@ uniform float uTime; uniform float uWind;
 varying vec3 vOccWorld;
 `;
 const FRAG_HEAD = MIST_GLSL + /* glsl */ `
-uniform vec3 uPlayer; uniform vec3 uCam; uniform vec3 uRim; uniform float uCut;
+uniform vec3 uPlayer; uniform vec3 uCam; uniform vec3 uRim; uniform float uCut; uniform vec4 uSeason;
 varying vec3 vOccWorld;
 // Interleaved gradient noise: a fine, even screen-door pattern (much less blocky than a 4x4 Bayer).
 float bayer4(vec2 p) {
@@ -80,10 +83,27 @@ const alphaChunk = `diffuseColor.a *= cutA;
   #include <opaque_fragment>`;
 const mistChunk = `#include <fog_fragment>
   gl_FragColor.rgb = mix(gl_FragColor.rgb, uMist, edgeMist(vOccWorld));`;
+// Seasons recolour only what is green, before lighting: bark, stone, sand and water keep their colour.
+const seasonChunk = (season: number, snow: boolean) => !season && !snow ? '' : /* glsl */ `{
+    vec3 sc = diffuseColor.rgb;
+    float gr = smoothstep(0.004, 0.05, sc.g - max(sc.r, sc.b)) * ${season.toFixed(3)};
+    float lum = dot(sc, vec3(0.3, 0.6, 0.1));
+    float pn = sin(vOccWorld.x * 0.13 + sin(vOccWorld.z * 0.09) * 2.0) * sin(vOccWorld.z * 0.11 + 0.7) * 0.5 + 0.5;
+    sc = mix(sc, mix(vec3(0.5, 0.36, 0.08), vec3(0.46, 0.14, 0.05), pn) * lum * 4.2, gr * uSeason.x * 0.85);
+    sc = mix(sc, vec3(0.72, 0.8, 0.92) * (0.75 + lum * 1.2), min(1.0, gr * 1.25) * uSeason.y);
+    sc = mix(sc, sc * vec3(1.18, 1.14, 0.82), gr * uSeason.z);
+    ${season >= 1 ? `{ // spring blossom specks on crowns
+      vec3 q = floor(vOccWorld * 5.0);
+      float h = fract(sin(dot(q, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+      sc = mix(sc, vec3(0.95, 0.6, 0.74), step(0.62, h) * gr * uSeason.z);
+    }` : ''}
+    ${snow ? `sc = mix(sc, vec3(0.86, 0.9, 0.98), smoothstep(0.42, 0.78, inverseTransformDirection(normal, viewMatrix).y) * uSeason.y);` : ''}
+    diffuseColor.rgb = sc;
+  }`;
 const uniformsOf = (shader: { uniforms: Record<string, THREE.IUniform> }) => Object.assign(shader.uniforms, U, { uTimeF: U.uTime });
 
 export function toon(opts: ToonOpts = {}) {
-  const { sway = 0, occlude = false, cut = false, rim = 0.35, ...params } = opts;
+  const { sway = 0, occlude = false, cut = false, rim = 0.35, season = 0, snow = false, ...params } = opts;
   const mat = new THREE.MeshToonMaterial({ gradientMap: ramp, transparent: cut, ...params });
   mat.userData.toon = opts;
   mat.onBeforeCompile = shader => {
@@ -117,6 +137,8 @@ export function toon(opts: ToonOpts = {}) {
         }`);
     shader.fragmentShader = FRAG_HEAD + shader.fragmentShader
       .replace('#include <clipping_planes_fragment>', occChunk(occlude, cut))
+      .replace('#include <lights_toon_fragment>', `${seasonChunk(season, snow)}
+        #include <lights_toon_fragment>`)
       .replace('#include <opaque_fragment>', `{
           vec3 V = normalize(vViewPosition);
           float fr = pow(1.0 - clamp(dot(normalize(normal), V), 0.0, 1.0), 3.0);
@@ -126,7 +148,7 @@ export function toon(opts: ToonOpts = {}) {
         ${alphaChunk}`)
       .replace('#include <fog_fragment>', mistChunk);
   };
-  mat.customProgramCacheKey = () => `toon-${sway}-${occlude}-${cut}-${rim}`;
+  mat.customProgramCacheKey = () => `toon-${sway}-${occlude}-${cut}-${rim}-${season}-${snow}`;
   return mat;
 }
 

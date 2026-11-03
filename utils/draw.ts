@@ -1,6 +1,79 @@
 import { Flower, FlowerType, Biome, Obstacle } from '../types';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, HOUSE_RECT, BIOME_COLORS, rarityOf } from '../constants';
 import { SeededRandom, BRIDGE_WIDTH, Pond, pondNorm } from './world';
+import { skyAt } from '../shared/sky';
+import { currentSeason } from '../shared/season';
+
+export const SEASON = currentSeason();
+
+// --- Seasons (spec v5 §4) ---
+// Recolour the baked ground once per screen. Only green pixels change: water, sand, paths and bridges stay.
+export const seasonGround = (ctx: CanvasRenderingContext2D, biome: Biome, dateSeed: string, sx: number, sy: number) => {
+  if (SEASON === 'summer') return;
+  const img = ctx.getImageData(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT), d = img.data;
+  const snow = biome === Biome.DESERT ? 0 : biome === Biome.TROPICAL ? 0.35 : 0.9;
+  const spots: number[] = []; // green cells, for decor below
+  for (let y = 0, i = 0; y < CANVAS_HEIGHT; y++) {
+    for (let x = 0; x < CANVAS_WIDTH; x++, i += 4) {
+      const r = d[i], g = d[i + 1], b = d[i + 2];
+      if (g <= r + 3 || g <= b + 6) continue;
+      if (!(x & 31) && !(y & 31)) spots.push(x, y);
+      const lum = (r + g + b) / 3;
+      if (SEASON === 'winter') {
+        d[i] = r + (196 + lum * 0.3 - r) * snow; d[i + 1] = g + (210 + lum * 0.24 - g) * snow; d[i + 2] = b + (228 + lum * 0.16 - b) * snow;
+      } else if (SEASON === 'autumn') {
+        // Slow patches between gold and rust, keeping the lights and darks of the original texture.
+        const n = Math.sin(x * 0.011 + Math.sin(y * 0.009) * 2 + sx) * Math.sin(y * 0.013 + sy) * 0.5 + 0.5, k = lum / 110;
+        d[i] = r + ((166 + n * 34) * k - r) * 0.52; d[i + 1] = g + ((150 - n * 44) * k - g) * 0.52; d[i + 2] = b + ((70 - n * 16) * k - b) * 0.52;
+      } else { // spring: fresher and yellower
+        d[i] = Math.min(255, r * 1.06 + 16); d[i + 1] = g; d[i + 2] = Math.min(255, b * 1.05 + 8);
+      }
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  // Scattered ground decor, on grass only.
+  const rng = new SeededRandom(`${dateSeed}-${sx}-${sy}-season`);
+  const cols = SEASON === 'autumn' ? ['#c2571f', '#d98a1f', '#a33a1a', '#e0a72e'] : SEASON === 'spring' ? ['#fbcfe8', '#fff1f7', '#f9a8d4', '#fde68a'] : ['#ffffff', '#ffffff', '#dbe9f7', '#c9dcf0'];
+  const n = Math.min(spots.length / 2, SEASON === 'winter' ? 240 : 170);
+  for (let k = 0; k < n; k++) {
+    const j = Math.floor(rng.next() * spots.length / 2) * 2;
+    const x = spots[j] + Math.floor(rng.next() * 30) - 15, y = spots[j + 1] + Math.floor(rng.next() * 30) - 15;
+    ctx.fillStyle = rng.choice(cols);
+    if (SEASON === 'autumn') { ctx.fillRect(x, y, 3, 2); ctx.fillRect(x + 1, y + 1, 3, 2); }
+    else if (SEASON === 'spring') { ctx.fillRect(x, y, 2, 2); ctx.fillRect(x + 2, y + 1, 1, 1); }
+    else ctx.fillRect(x, y, 2, 1);
+  }
+};
+
+// Falling season particles: position computed from time, nothing stored or allocated per frame.
+const FX_N = SEASON === 'winter' ? 70 : SEASON === 'summer' ? 14 : 34;
+export const drawSeasonFx = (ctx: CanvasRenderingContext2D, now: number) => {
+  const s = now / 1000;
+  ctx.fillStyle = SEASON === 'winter' ? '#ffffff' : SEASON === 'autumn' ? '#d9791f' : SEASON === 'spring' ? '#fbcfe8' : '#fde68a';
+  ctx.globalAlpha = SEASON === 'summer' ? 0.55 : 0.85;
+  const fall = SEASON === 'winter' ? 42 : SEASON === 'summer' ? -6 : 30;
+  for (let i = 0; i < FX_N; i++) {
+    const a = i * 137.5, sp = 0.7 + (i % 5) * 0.14;
+    const x = ((a * 7.3 + s * 14 * sp + Math.sin(s * sp + i) * 22) % CANVAS_WIDTH + CANVAS_WIDTH) % CANVAS_WIDTH;
+    const y = ((a * 3.1 + s * fall * sp) % CANVAS_HEIGHT + CANVAS_HEIGHT) % CANVAS_HEIGHT;
+    const big = 2 + (i % 2);
+    if (SEASON === 'winter' || SEASON === 'summer') ctx.fillRect(x | 0, y | 0, big, big);
+    else { const flip = Math.sin(s * 3 + i) > 0 ? 1 : 2; ctx.fillRect(x | 0, y | 0, big + 1, flip); }
+  }
+  ctx.globalAlpha = 1;
+};
+
+// Ground shadow: strength from the sky table, stretched toward the side when the sun is low.
+const shadowBlob = (ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, ry: number, reach: number, time: number) => {
+  const low = Math.min(1, Math.abs(time - 0.5) * 3.4); // 0 at noon, 1 near sunrise and sunset
+  const off = (time < 0.25 || time > 0.8 ? 0 : (time - 0.5)) * reach;
+  ctx.globalAlpha = skyAt(time).shadow;
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.ellipse(x + off, y, rx * (1 + low * 0.9), ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+};
 
 // Static ground layer for one screen; drawn once into an offscreen canvas when the screen changes.
 export const drawBackground = (ctx: CanvasRenderingContext2D, biome: Biome, dateSeed: string, sx: number, sy: number, house: boolean,
@@ -746,67 +819,65 @@ export const drawHouse = (ctx: CanvasRenderingContext2D, time: number) => {
   const y = HOUSE_RECT.y;
   const w = HOUSE_RECT.width;
   const h = HOUSE_RECT.height;
-  const lightsOn = time < 0.25 || time > 0.75;
-  const shadowOffX = (time - 0.5) * 180;
-  ctx.fillStyle = lightsOn ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.3)';
+  const lightsOn = skyAt(time).lights > 0.5;
+  const shadowOffX = (time < 0.25 || time > 0.8 ? 0 : time - 0.5) * 180;
+  ctx.fillStyle = '#000';
+  ctx.globalAlpha = skyAt(time).shadow;
   ctx.beginPath();
   ctx.moveTo(x + shadowOffX, y + h);
   ctx.lineTo(x + w + shadowOffX, y + h);
   ctx.lineTo(x + w, y + h - 10);
   ctx.lineTo(x, y + h - 10);
   ctx.fill();
+  ctx.globalAlpha = 1;
   ctx.drawImage(houseBody(lightsOn), HOUSE_OX, 0);
 };
 
-// Canopy is the same for every tree, so it is drawn once and blitted with the sway offset.
-let canopy: HTMLCanvasElement | null = null;
-const getCanopy = () => {
-  if (canopy) return canopy;
-  canopy = document.createElement('canvas');
+// Canopy is the same for every tree of a colour, so it is drawn once and blitted with the sway offset.
+const CANOPY_COLS: [string, string][] = SEASON === 'autumn' ? [['#9a4a12', '#c96f1a'], ['#8f2f14', '#b8461c'], ['#a9791a', '#d6a42a']]
+  : SEASON === 'winter' ? [['#4a5a55', '#5f716b']] : SEASON === 'spring' ? [['#1c6b3a', '#2f8a4a'], ['#d67aa5', '#f3a9c8']] : [['#14532d', '#166534']];
+const canopies: HTMLCanvasElement[] = [];
+const getCanopy = (n: number) => {
+  const idx = n % CANOPY_COLS.length;
+  if (canopies[idx]) return canopies[idx];
+  const canopy = canopies[idx] = document.createElement('canvas');
   canopy.width = 52;
   canopy.height = 60;
   const ctx = canopy.getContext('2d')!;
   const x = 6, y = 24;
-  ctx.fillStyle = '#14532d';
+  ctx.fillStyle = CANOPY_COLS[idx][0];
   ctx.beginPath();
   ctx.arc(x + 20, y + 10, 20, 0, Math.PI * 2);
   ctx.arc(x + 10, y + 20, 15, 0, Math.PI * 2);
   ctx.arc(x + 30, y + 20, 15, 0, Math.PI * 2);
   ctx.arc(x + 20, y - 5, 18, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = '#166534';
+  ctx.fillStyle = CANOPY_COLS[idx][1];
   ctx.beginPath();
   ctx.arc(x + 20, y + 5, 12, 0, Math.PI * 2);
   ctx.fill();
+  if (SEASON === 'winter') { // snow lying on the top of the crown
+    ctx.fillStyle = '#f2f7fc';
+    ctx.beginPath();
+    ctx.arc(x + 20, y - 8, 15, Math.PI * 1.02, Math.PI * 1.98);
+    ctx.arc(x + 6, y + 14, 9, Math.PI * 1.05, Math.PI * 1.9);
+    ctx.arc(x + 34, y + 14, 9, Math.PI * 1.1, Math.PI * 1.95);
+    ctx.fill();
+    ctx.fillRect(x + 7, y - 9, 26, 5);
+  }
   return canopy;
 };
 
 export const drawTree = (ctx: CanvasRenderingContext2D, x: number, y: number, now: number, time: number) => {
   const sway = Math.sin(now / 1000 + x) * 2;
-  const shadowOffX = (time - 0.5) * 120;
-  const isNight = time < 0.2 || time > 0.8;
-
-  if (!isNight) {
-    ctx.fillStyle = 'rgba(0,0,0,0.2)';
-    ctx.beginPath();
-    ctx.ellipse(x + 20 + shadowOffX, y + 38, 24, 8, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
+  shadowBlob(ctx, x + 20, y + 38, 24, 8, 120, time);
   ctx.fillStyle = '#451a03';
   ctx.fillRect(x + 15, y + 20, 10, 20);
-  ctx.drawImage(getCanopy(), x + sway - 6, y - 24);
+  ctx.drawImage(getCanopy(Math.abs(Math.round(x * 3 + y))), x + sway - 6, y - 24);
 };
 
 export const drawRock = (ctx: CanvasRenderingContext2D, x: number, y: number, time: number) => {
-  const shadowOffX = (time - 0.5) * 80;
-  const isNight = time < 0.2 || time > 0.8;
-  if (!isNight) {
-    ctx.fillStyle = 'rgba(0,0,0,0.2)';
-    ctx.beginPath();
-    ctx.ellipse(x + 20 + shadowOffX, y + 28, 18, 8, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  shadowBlob(ctx, x + 20, y + 28, 18, 8, 80, time);
 
   ctx.fillStyle = '#57534e';
   ctx.beginPath();
@@ -824,6 +895,18 @@ export const drawRock = (ctx: CanvasRenderingContext2D, x: number, y: number, ti
   ctx.lineTo(x + 25, y + 8);
   ctx.lineTo(x + 20, y + 20);
   ctx.fill();
+  if (SEASON === 'winter') {
+    ctx.fillStyle = '#f2f7fc';
+    ctx.beginPath();
+    ctx.moveTo(x + 9, y + 15);
+    ctx.lineTo(x + 25, y + 5);
+    ctx.lineTo(x + 35, y + 15);
+    ctx.lineTo(x + 29, y + 13);
+    ctx.lineTo(x + 24, y + 16);
+    ctx.lineTo(x + 18, y + 13);
+    ctx.closePath();
+    ctx.fill();
+  }
 };
 
 // Flower heads that only move with the sway are drawn once per type and blitted; the rest (glowing,
@@ -1655,11 +1738,7 @@ export const drawBang = (ctx: CanvasRenderingContext2D, x: number, y: number) =>
 };
 
 export const drawElio = (ctx: CanvasRenderingContext2D, x: number, y: number, now: number, time: number) => {
-  const shadowOffX = (time - 0.5) * 10;
-  ctx.fillStyle = 'rgba(0,0,0,0.2)';
-  ctx.beginPath();
-  ctx.ellipse(x + shadowOffX, y, 14, 6, 0, 0, Math.PI * 2);
-  ctx.fill();
+  shadowBlob(ctx, x, y, 14, 6, 10, time);
   const look = Math.floor(now / 1400 + x) % 3; // left, right, right: he glances around
   const img = sprite(look === 0 ? 'elio0' : 'elio1', 2);
   const bob = Math.floor(now / 500) % 2;
